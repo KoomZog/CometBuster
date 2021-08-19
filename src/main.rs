@@ -1,5 +1,4 @@
 // TO DO - Rough order
-// Web export
 // Asteroids splitting when destroyed
 // Shield bouncing on asteroids, needs mass component
 // Levels
@@ -9,13 +8,14 @@
 // 10 Player ship, asteroids, bullets
 // 00 Background
 
-// Crates
-use console_error_panic_hook;
-use instant;
+// Prints Rust error messages to the browser console
+extern crate console_error_panic_hook;
+use std::panic;
+
+extern crate instant; // Works exactly like the std::time counterpart on native, but implements a JS performance.now() for WASM
 
 use bevy::prelude::*;
 use rand::Rng;
-use std::panic;
 
 const SHIP_SPRITE: &str = "ship.png";
 const SHIELD_SPRITE: &str = "shield.png";
@@ -82,24 +82,25 @@ fn main() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut app = App::build();
-    app.insert_resource(Msaa { samples: 4 });
+//    app.insert_resource(Msaa { samples: 4 }); // TODO: Find out what this does. Was in the web template. Does not seem to be needed.
 
+    // Use webgl2 for the WASM version. Load all Default Plugins except LogPlugin. It needs to be disabled for web.
     #[cfg(target_arch = "wasm32")]
     app.add_plugins_with(DefaultPlugins, |group| {
         group.disable::<bevy::log::LogPlugin>()
     })
     .add_plugin(bevy_webgl2::WebGL2Plugin);
-    
+
+    // Set window options for native, load ALL Default Plugins
+    #[cfg(not(target_arch = "wasm32"))]
     app.insert_resource(WindowDescriptor {
         title: "CometBuster".to_string(),
         width: 1280.0,
         height: 720.0,
         cursor_visible: false,
         ..Default::default()
-    });
-    
-    #[cfg(not(target_arch = "wasm32"))]
-    app.add_plugins(DefaultPlugins);
+    })
+    .add_plugins(DefaultPlugins);
 
     app.add_startup_system(setup.system())
     .add_startup_stage(
@@ -122,6 +123,8 @@ fn main() {
     .add_system(normalize_angle.system())
     .run();
 }
+
+// -- STARTUP SYSTEMS --
 
 fn setup(
     mut commands: Commands,
