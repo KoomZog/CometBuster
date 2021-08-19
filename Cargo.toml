@@ -1,10 +1,40 @@
 [package]
 name = "cometbuster"
 version = "0.1.0"
+authors = ["Alexander Widell"]
 edition = "2018"
-
+repository = "https://github.com/koomzog/cometbuster"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = [
+  "bevy/bevy_gltf",
+  "bevy/bevy_winit",
+  "bevy/render",
+  "bevy/png",
+]
+
+native = [
+  "bevy/bevy_wgpu"
+]
+
+web = [
+  "bevy_webgl2"
+]
+
 [dependencies]
-bevy = "0.5"
+bevy = {version="0.5.0", default-features=false}
+bevy_webgl2 = {version="0.5.2", optional=true}
+console_error_panic_hook = "0.1.6"
+instant = "0.1.1"
+
+winit = {version = "0.24.0"}
 rand = "0.8.4"
+getrandom = {version="0.1", features=["wasm-bindgen"]}
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+# lto = true
+# opt-level = 's'

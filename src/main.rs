@@ -1,6 +1,7 @@
 // TO DO - Rough order
 // Web export
 // Asteroids splitting when destroyed
+// Shield bouncing on asteroids, needs mass component
 // Levels
 
 // -- Z LAYERS --
@@ -8,10 +9,13 @@
 // 10 Player ship, asteroids, bullets
 // 00 Background
 
-use std::time::{Duration, Instant};
+// Crates
+use console_error_panic_hook;
+use instant;
 
 use bevy::prelude::*;
 use rand::Rng;
+use std::panic;
 
 const SHIP_SPRITE: &str = "ship.png";
 const SHIELD_SPRITE: &str = "shield.png";
@@ -33,8 +37,8 @@ struct ShieldActivated;
 struct ShieldDeactivated;
 
 struct Bullet;
-struct Lifetime(Duration);
-struct SpawnTime(Instant);
+struct Lifetime(instant::Duration);
+struct SpawnTime(instant::Instant);
 
 struct Asteroid;
 struct AsteroidBig;
@@ -75,35 +79,48 @@ impl Default for Velocity {
 }
 
 fn main() {
-    App::build()
-        .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
-        .insert_resource(WindowDescriptor {
-            title: "CometBuster".to_string(),
-            width: 800.0,
-            height: 450.0,
-            ..Default::default()
-        })
-        .add_plugins(DefaultPlugins)
-        .add_startup_system(setup.system())
-        .add_startup_stage(
-            "setup_resources",
-            SystemStage::single(setup_resources.system()),
-        )
-        .add_system(control.system())
-        .add_system(respawn_player.system())
-        .add_system(respawn_asteroid.system())
-        .add_system(despawn_after_lifetime.system())
-        .add_system(collision_detection.system())
-        .add_system(gain_energy.system())
-        .add_system(drain_energy.system())
-        .add_system(activate_shield.system())
-        .add_system(deactivate_shield.system())
-        //.add_system(pivot_shield.system())
-        .add_system(movement_translation.system())
-        .add_system(movement_rotation.system())
-        .add_system(edge_looping.system())
-        .add_system(normalize_angle.system())
-        .run();
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+    let mut app = App::build();
+    app.insert_resource(Msaa { samples: 4 });
+
+    #[cfg(target_arch = "wasm32")]
+    app.add_plugins_with(DefaultPlugins, |group| {
+        group.disable::<bevy::log::LogPlugin>()
+    })
+    .add_plugin(bevy_webgl2::WebGL2Plugin);
+    
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(DefaultPlugins);
+    
+    app.insert_resource(WindowDescriptor {
+        title: "CometBuster".to_string(),
+        width: 800.0,
+        height: 450.0,
+        cursor_visible: false,
+        ..Default::default()
+    });
+
+    app.add_startup_system(setup.system())
+    .add_startup_stage(
+        "setup_resources",
+        SystemStage::single(setup_resources.system()),
+    )
+    .add_system(control.system())
+    .add_system(respawn_player.system())
+    .add_system(respawn_asteroid.system())
+    .add_system(despawn_after_lifetime.system())
+    .add_system(collision_detection.system())
+    .add_system(gain_energy.system())
+    .add_system(drain_energy.system())
+    .add_system(activate_shield.system())
+    .add_system(deactivate_shield.system())
+    //.add_system(pivot_shield.system())
+    .add_system(movement_translation.system())
+    .add_system(movement_rotation.system())
+    .add_system(edge_looping.system())
+    .add_system(normalize_angle.system())
+    .run();
 }
 
 fn setup(
@@ -124,7 +141,7 @@ fn setup(
 fn setup_resources(mut commands: Commands, materials: Res<Materials>) {
     commands.spawn_bundle(SpriteBundle {
         material: materials.background.clone(),
-        sprite: Sprite::new(Vec2::new(800., 450.)),
+        sprite: Sprite::new(Vec2::new(1280., 720.)),
         transform: Transform {
             translation: Vec3::new(0., 0., 0.),
             ..Default::default()
@@ -205,8 +222,8 @@ fn control(
                 })
                 .insert(Radius(4.))
                 .insert(Bullet)
-                .insert(SpawnTime(Instant::now()))
-                .insert(Lifetime(Duration::new(1, 0)));
+                .insert(SpawnTime(instant::Instant::now()))
+                .insert(Lifetime(instant::Duration::new(1, 0)));
         }
     }
 }
