@@ -90,16 +90,16 @@ fn main() {
     })
     .add_plugin(bevy_webgl2::WebGL2Plugin);
     
-    #[cfg(not(target_arch = "wasm32"))]
-    app.add_plugins(DefaultPlugins);
-    
     app.insert_resource(WindowDescriptor {
         title: "CometBuster".to_string(),
-        width: 800.0,
-        height: 450.0,
+        width: 1280.0,
+        height: 720.0,
         cursor_visible: false,
         ..Default::default()
     });
+    
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(DefaultPlugins);
 
     app.add_startup_system(setup.system())
     .add_startup_stage(
