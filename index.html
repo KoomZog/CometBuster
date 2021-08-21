@@ -4,15 +4,22 @@
     <meta charset="utf-8"/>
     <style>
       body {
-        background-color: #222222;
+        background-color: #060606;
       }
       canvas {
-        background-color: white;
+        border:2px solid #222222;
+        margin-left: 310;
       }
     </style>
   </head>
-  <script type="module">
-    import init from './target/wasm.js'
-    init()
-  </script>
+  <body>
+    <div style="height: 100px; text-align: center; font-family: verdana; margin-top: 10px; color: grey;">
+      <p style="font-size: 30;">Comet Buster</p>
+      <p>Controls: Arrow keys, Z, X</p>
+    </div>
+    <script type="module">
+      import init from './target/wasm.js'
+      init()
+    </script>
+  </body>
 </html>
