@@ -1,6 +1,7 @@
 // TO DO - Rough order
+// Bounce function working over edges
 // Asteroids splitting when destroyed
-// Shield bouncing on asteroids, needs mass component
+// GUI
 // Levels
 
 // -- Z LAYERS --
@@ -52,6 +53,7 @@ struct AsteroidBig;
 struct SpawnSprites;
 
 struct Radius(f32);
+struct Mass(f32);
 
 struct Angle(f32);
 impl Default for Angle {
@@ -87,7 +89,7 @@ impl Default for Velocity {
 fn main() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    let mut app = App::build();
+    let mut app = App::new();
 //    app.insert_resource(Msaa { samples: 4 }); // TODO: Find out what this does. Was in the web template. Does not seem to be needed.
 
     // Use webgl2 for the WASM version. Load all Default Plugins except LogPlugin. It needs to be disabled for web.
@@ -108,26 +110,26 @@ fn main() {
     })
     .add_plugins(DefaultPlugins);
 
-    app.add_startup_system(setup.system())
+    app.add_startup_system(setup)
     .add_startup_stage(
         "setup_resources",
-        SystemStage::single(setup_resources.system()),
+        SystemStage::single(setup_resources),
     )
-    .add_system(debug.system())
-    .add_system(control.system())
-    .add_system(spawn_sprite_grid.system())
-    .add_system(respawn_player.system())
-    .add_system(respawn_asteroid.system())
-    .add_system(despawn_after_lifetime.system())
-    .add_system(collision_detection.system())
-    .add_system(gain_energy.system())
-    .add_system(drain_energy.system())
-    .add_system(activate_shield.system())
-    .add_system(deactivate_shield.system())
-    .add_system(movement_translation.system())
-    .add_system(movement_rotation.system())
-    .add_system(edge_looping.system())
-    .add_system(normalize_angle.system())
+    .add_startup_system(spawn_asteroids)
+    .add_system(debug)
+    .add_system(control)
+    .add_system(spawn_sprite_grid)
+    .add_system(respawn_player)
+    .add_system(despawn_after_lifetime)
+    .add_system(collision_detection)
+    .add_system(gain_energy)
+    .add_system(drain_energy)
+    .add_system(activate_shield)
+    .add_system(deactivate_shield)
+    .add_system(movement_translation)
+    .add_system(movement_rotation)
+    .add_system(edge_looping)
+    .add_system(normalize_angle)
     .run();
 }
 
@@ -163,17 +165,9 @@ fn setup_resources(mut commands: Commands, materials: Res<Materials>) {
 // -- SYSTEMS --
 
 fn debug(
-//    mut commands: Commands,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(
-        &Transform,
-        With<GridSprite>,
-    )>,
 ) {
-    if let Ok((transform, _sprite)) = query.single_mut() {
-        if keyboard_input.just_pressed(KeyCode::F1) {
-            dbg!(transform.translation);
-        }
+    if keyboard_input.just_pressed(KeyCode::F1) {
     }
 }
 
@@ -245,7 +239,8 @@ fn control(
                     x: velocity.x + angle.0.cos() * bullet_speed,
                     y: velocity.y + angle.0.sin() * bullet_speed,
                 })
-                .insert(Radius(4.))
+                .insert(Radius(4.0))
+                .insert(Mass(5.0))
                 .insert(Bullet)
                 .insert(Original)
                 .insert(SpawnTime(instant::Instant::now()))
@@ -317,40 +312,55 @@ fn respawn_player (
         .insert(Player)
         .insert(GlobalTransform::default())
         .insert(Transform {
-            translation: Vec3::new(100.0, 100.0, 10.),
+            translation: Vec3::new(500.0, -300.0, 10.),
                 ..Default::default()
             })
         .insert(Velocity::default())
         .insert(Angle::default())
         .insert(Acceleration::default())
+        .insert(Mass(30.0))
         .insert(Radius(30.0))
         .insert(Energy::default())
         .insert(SpawnSprites);
     }
 }
 
-fn respawn_asteroid (
+fn spawn_asteroids (
     mut commands: Commands,
-    mut query: Query<With<Asteroid>>
 ){
-    if let Ok(_) = query.single_mut() {
-    } else {
-        commands.spawn()
-        .insert(Original)
-        .insert(Asteroid)
-        .insert(AsteroidBig)
-        .insert(GlobalTransform::default())
-        .insert(Transform {
-            translation: Vec3::new(rf32(0., WINDOW_WIDTH), rf32(0., WINDOW_HEIGHT), 10.),
-                ..Default::default()
-            })
-        .insert(Velocity {
-            x: rf32(-30., 30.),
-            y: rf32(-30., 30.),
+    commands.spawn()
+    .insert(Original)
+    .insert(Asteroid)
+    .insert(AsteroidBig)
+    .insert(GlobalTransform::default())
+    .insert(Transform {
+        translation: Vec3::new(100.0, 100.0, 10.),
+            ..Default::default()
         })
-        .insert(Radius(90.))
-        .insert(SpawnSprites);
-    }
+    .insert(Velocity {
+        x: 100.0,
+        y: 0.0,
+    })
+    .insert(Radius(90.))
+    .insert(Mass(100.))
+    .insert(SpawnSprites);
+
+    commands.spawn()
+    .insert(Original)
+    .insert(Asteroid)
+    .insert(AsteroidBig)
+    .insert(GlobalTransform::default())
+    .insert(Transform {
+        translation: Vec3::new(800.0, 150.0, 10.),
+            ..Default::default()
+        })
+    .insert(Velocity {
+        x: -100.0,
+        y: 0.0,
+    })
+    .insert(Radius(90.))
+    .insert(Mass(100.))
+    .insert(SpawnSprites);
 }
 
 fn despawn_after_lifetime(
@@ -364,43 +374,64 @@ fn despawn_after_lifetime(
     }
 }
 
-fn collision_detection(
+fn collision_detection (
     mut commands: Commands,
-    mut query_shield: Query<(&GlobalTransform, &Radius, With<Shield>)>,
-    mut query_player: Query<(Entity, &Transform, &Radius, With<Player>, Without<ShieldActive>)>,
-    mut query_asteroid: Query<(Entity, &Transform, &Radius, With<Asteroid>)>,
-    mut query_bullet: Query<(Entity, &Transform, &Radius, With<Bullet>)>,
+    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, Option<&Player>, Option<&Bullet>, Option<&Asteroid>, Option<&ShieldActive>)>,
 ) {
-    for (asteroid_entity, &asteroid_transform, asteroid_radius, _) in query_asteroid.iter_mut() {
+    let mut iter = query.iter_combinations_mut();
 
-        // Asteroid vs Bullet, destroy Asteroid
-        for (bullet_entity, &bullet_transform, bullet_radius, _) in query_bullet.iter_mut() {
-            let distance_x = (asteroid_transform.translation.x - bullet_transform.translation.x).abs();
-            let distance_y = (asteroid_transform.translation.y - bullet_transform.translation.y).abs();
-            let distance = distance_x.hypot(distance_y);
-            if distance < bullet_radius.0 + asteroid_radius.0 {
-                commands.entity(asteroid_entity).despawn_recursive();
-                commands.entity(bullet_entity).despawn_recursive();
-            }
-        }
-        
-        // Asteroid vs Shield, destroy Asteroid
-        if let Ok((&shield_transform, shield_radius, _)) = query_shield.single_mut() {
-            let distance_x = (asteroid_transform.translation.x - shield_transform.translation.x).abs();
-            let distance_y = (asteroid_transform.translation.y - shield_transform.translation.y).abs();
-            let distance = distance_x.hypot(distance_y);
-            if distance < shield_radius.0 + asteroid_radius.0 {
-                commands.entity(asteroid_entity).despawn_recursive();
-            }
-        }
+    while let Some([
+        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, player_1, bullet_1, asteroid_1, shield_active_1),
+        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, player_2, bullet_2, asteroid_2, shield_active_2)
+        ]) = iter.fetch_next()
+    {
+        let distance = shortest_distance(
+            transform_1.translation.x,
+            transform_1.translation.y,
+            transform_2.translation.x,
+            transform_2.translation.y,
+        );
+        if distance < radius_1.0 + radius_2.0 {
 
-        // Asteroid vs Player, destroy Player
-        if let Ok((player_entity, &player_transform, player_radius, _, _)) = query_player.single_mut() {
-            let distance_x = (asteroid_transform.translation.x - player_transform.translation.x).abs();
-            let distance_y = (asteroid_transform.translation.y - player_transform.translation.y).abs();
-            let distance = distance_x.hypot(distance_y);
-            if distance < player_radius.0 + asteroid_radius.0 {
-                commands.entity(player_entity).despawn_recursive();
+            // Despawn 1
+            if
+                player_1.is_some() && shield_active_1.is_none() && asteroid_2.is_some() ||
+                asteroid_1.is_some() && bullet_2.is_some()
+            {
+                commands.entity(entity_1).despawn_recursive();
+            }
+
+            // Despawn 2
+            if
+                asteroid_1.is_some() && player_2.is_some() && shield_active_2.is_none() ||
+                bullet_1.is_some() && asteroid_2.is_some()
+            {
+                commands.entity(entity_2).despawn_recursive();
+            }
+
+            // Bounce
+            if
+                asteroid_1.is_some() && asteroid_2.is_some() ||
+                asteroid_1.is_some() && player_2.is_some() && shield_active_2.is_some() ||
+                player_1.is_some() && shield_active_2.is_some() && asteroid_2.is_some()
+            {
+                let (velocity_1_x_new, velocity_1_y_new, velocity_2_x_new, velocity_2_y_new) = velocity_after_bounce(
+                    transform_1.translation.x,
+                    transform_1.translation.y,
+                    velocity_1.x,
+                    velocity_1.y,
+                    mass_1.0,
+                    transform_2.translation.x,
+                    transform_2.translation.y,
+                    velocity_2.x,
+                    velocity_2.y,
+                    mass_2.0,
+                );
+                dbg!(velocity_1_x_new);
+                velocity_1.x = velocity_1_x_new;
+                velocity_1.y = velocity_1_y_new;
+                velocity_2.x = velocity_2_x_new;
+                velocity_2.y = velocity_2_y_new;
             }
         }
     }
@@ -528,4 +559,52 @@ fn normalize_angle(mut query: Query<&mut Angle>) {
 fn rf32(low: f32, high: f32) -> f32 {
     let mut rng = rand::thread_rng();
     return rng.gen::<f32>() * (high - low) + low;
+}
+
+// Returns the shortest distance between entities, taking edge looping into account
+fn shortest_distance (x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let x_dist_1 = (x1 - x2).abs();
+    let x_dist_2 = (x1 - (x2 + WINDOW_WIDTH)).abs();
+    let x_dist_3 = (x1 - (x2 - WINDOW_WIDTH)).abs();
+    let x_min = f32::min(x_dist_1, f32::min(x_dist_2, x_dist_3));
+
+    let y_dist_1 = (y1 - y2).abs();
+    let y_dist_2 = (y1 - (y2 + WINDOW_HEIGHT)).abs();
+    let y_dist_3 = (y1 - (y2 - WINDOW_HEIGHT)).abs();
+    let y_min = f32::min(y_dist_1, f32::min(y_dist_2, y_dist_3));
+
+    return x_min.hypot(y_min);
+}
+
+// Returns the new X and Y velocities of an object after a bounce
+fn velocity_after_bounce(
+    // Get position, velocity and mass of both entities
+    x1: f32,
+    y1: f32,
+    xv1: f32,
+    yv1: f32,
+    m1: f32,
+    x2: f32,
+    y2: f32,
+    xv2: f32,
+    yv2: f32,
+    m2: f32,
+    // Returns new x and y velocities
+) -> (f32, f32, f32, f32) {
+    let mut t1 = (yv1/xv1).atan(); // Theta, ent 1
+    if xv1 < 0.0 { t1 += PI; }
+    let mut t2 = (yv2/xv2).atan(); // Theta, ent 2
+    if xv2 < 0.0 { t2 += PI; }
+    let v1 = xv1.hypot(yv1).abs(); // Velocity, ent 1
+    let v2 = xv2.hypot(yv2).abs(); // Velocity, ent 2
+    let mut t12 = ((y2-y1)/(x2-x1)).atan(); // Theta between the entities
+    if x2 < x1 { t12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
+
+    // https://en.wikipedia.org/wiki/Elastic_collision - Two-dimensional collision with two moving objects
+    let xv1_new = (v1 * (t1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * v2 * ( t2 - t12 ).cos() ) / ( m1 + m2 ) * t12.cos() + v1 * ( t1 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
+    let yv1_new = (v1 * (t1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * v2 * ( t2 - t12 ).cos() ) / ( m1 + m2 ) * t12.sin() + v1 * ( t1 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+    let xv2_new = (v2 * (t2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * v1 * ( t1 - t12 ).cos() ) / ( m2 + m1 ) * t12.cos() + v2 * ( t2 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
+    let yv2_new = (v2 * (t2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * v1 * ( t1 - t12 ).cos() ) / ( m2 + m1 ) * t12.sin() + v2 * ( t2 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+
+    return (xv1_new, yv1_new, xv2_new, yv2_new);
 }
