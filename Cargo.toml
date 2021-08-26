@@ -24,9 +24,10 @@ web = [
 
 [dependencies]
 bevy = { git = "https://github.com/bevyengine/bevy", default-features=false}
-# Swap back to official bevy_webgl2 when it is updated to work with bevy main.
+# Try different bevy_webgl2 versions to get it to compile for web.
 # bevy_webgl2 = {version = "0.5.2", optional=true}
-bevy_webgl2 = {git = "https://github.com/billyb2/bevy_webgl2", optional=true}
+# bevy_webgl2 = {git = "https://github.com/billyb2/bevy_webgl2", optional=true}
+bevy_webgl2 = {git = "https://github.com/mrk-its/bevy_webgl2", optional=true}
 console_error_panic_hook = "0.1.6"
 instant = "0.1.1"
 

@@ -1,5 +1,4 @@
 // TO DO - Rough order
-// Bounce function working over edges
 // Asteroids splitting when destroyed
 // GUI
 // Levels
@@ -85,6 +84,44 @@ impl Default for Velocity {
         Self { x: 0., y: 0. }
     }
 }
+
+// Bundles
+
+#[derive(Bundle)]
+struct PlayerBundle {
+    original: Original,
+    player: Player,
+    spawn_sprites: SpawnSprites,
+    global_transform: GlobalTransform,
+    transform: Transform,
+    velocity: Velocity,
+    angle: Angle,
+    acceleration: Acceleration,
+    energy: Energy,
+    mass: Mass,
+    radius: Radius,
+}
+impl Default for PlayerBundle {
+    fn default() -> Self {
+        Self {
+            player: Player,
+            original: Original,
+            spawn_sprites: SpawnSprites,
+            transform: Transform {
+                translation: Vec3::new(0.0, 0.0, 20.0),
+                ..Default::default()
+            },
+            global_transform: GlobalTransform::default(),
+            velocity: Velocity::default(),
+            angle: Angle::default(),
+            acceleration: Acceleration::default(),
+            energy: Energy::default(),
+            mass: Mass(30.0),
+            radius: Radius(30.0),
+        }
+    }
+}
+
 
 fn main() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -307,21 +344,9 @@ fn respawn_player (
 ){
     if let Ok(_) = query.single_mut() {
     } else {
-        commands.spawn()
-        .insert(Original)
-        .insert(Player)
-        .insert(GlobalTransform::default())
-        .insert(Transform {
-            translation: Vec3::new(500.0, -300.0, 10.),
-                ..Default::default()
-            })
-        .insert(Velocity::default())
-        .insert(Angle::default())
-        .insert(Acceleration::default())
-        .insert(Mass(30.0))
-        .insert(Radius(30.0))
-        .insert(Energy::default())
-        .insert(SpawnSprites);
+        commands.spawn_bundle(PlayerBundle {
+            ..Default::default()
+        });
     }
 }
 
@@ -393,7 +418,7 @@ fn collision_detection (
         );
         if distance < radius_1.0 + radius_2.0 {
 
-            // Despawn 1
+            // Despawn entity 1
             if
                 player_1.is_some() && shield_active_1.is_none() && asteroid_2.is_some() ||
                 asteroid_1.is_some() && bullet_2.is_some()
@@ -401,7 +426,7 @@ fn collision_detection (
                 commands.entity(entity_1).despawn_recursive();
             }
 
-            // Despawn 2
+            // Despawn entity 2
             if
                 asteroid_1.is_some() && player_2.is_some() && shield_active_2.is_none() ||
                 bullet_1.is_some() && asteroid_2.is_some()
@@ -427,7 +452,6 @@ fn collision_detection (
                     velocity_2.y,
                     mass_2.0,
                 );
-                dbg!(velocity_1_x_new);
                 velocity_1.x = velocity_1_x_new;
                 velocity_1.y = velocity_1_y_new;
                 velocity_2.x = velocity_2_x_new;
@@ -576,7 +600,7 @@ fn shortest_distance (x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     return x_min.hypot(y_min);
 }
 
-// Returns the new X and Y velocities of an object after a bounce
+// Returns the new X and Y velocities of entities after they bounce
 fn velocity_after_bounce(
     // Get position, velocity and mass of both entities
     x1: f32,
@@ -584,17 +608,22 @@ fn velocity_after_bounce(
     xv1: f32,
     yv1: f32,
     m1: f32,
-    x2: f32,
-    y2: f32,
+    mut x2: f32,
+    mut y2: f32,
     xv2: f32,
     yv2: f32,
     m2: f32,
     // Returns new x and y velocities
 ) -> (f32, f32, f32, f32) {
+    if (x2 + WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { x2 += WINDOW_WIDTH; }
+    if (x2 - WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { x2 -= WINDOW_WIDTH; }
+    if (y2 + WINDOW_HEIGHT - y1).abs() < (y2 - y1).abs() { y2 += WINDOW_HEIGHT; }
+    if (y2 - WINDOW_HEIGHT - y1).abs() < (y2 - y1).abs() { y2 -= WINDOW_HEIGHT; }
+
     let mut t1 = (yv1/xv1).atan(); // Theta, ent 1
-    if xv1 < 0.0 { t1 += PI; }
+    if xv1 < 0.0 { t1 += PI; } // .atan() can only calculate an angle, not which direction along that angle
     let mut t2 = (yv2/xv2).atan(); // Theta, ent 2
-    if xv2 < 0.0 { t2 += PI; }
+    if xv2 < 0.0 { t2 += PI; } // .atan() can only calculate an angle, not which direction along that angle
     let v1 = xv1.hypot(yv1).abs(); // Velocity, ent 1
     let v2 = xv2.hypot(yv2).abs(); // Velocity, ent 2
     let mut t12 = ((y2-y1)/(x2-x1)).atan(); // Theta between the entities
