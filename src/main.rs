@@ -3,19 +3,13 @@
 // GUI
 // Levels
 
-// -- Z LAYERS --
-// 30 Shield
-// 20 Ship
-// 10 Asteroids, bullets
-// 00 Background
-
 // Prints Rust error messages to the browser console
 extern crate console_error_panic_hook;
 use std::panic;
 
-extern crate instant; // Works exactly like the std::time counterpart on native, but implements a JS performance.now() for WASM
+extern crate instant; // Works exactly like the std::time counterpart on native, but uses JS performance.now() for WASM
 
-use bevy::prelude::*;
+use bevy::{prelude::*};
 use rand::Rng;
 
 const SHIP_SPRITE: &str = "ship.png";
@@ -33,26 +27,103 @@ struct Materials {
     asteroid_1: Handle<ColorMaterial>,
 }
 
-
 // Tags
 struct Original;
 struct GridSprite;
 struct Player;
 struct Shield;
-struct ShieldActive;
-struct ShieldActivated;
-struct ShieldDeactivated;
-struct Bullet;
+struct Asteroid;
+
+// Events
+struct EvDespawnRecursive{entity: Entity}
+struct EvShieldActivated{entity: Entity}
+struct EvShieldDeactivated{entity: Entity}
+struct EvSpawnAsteroidFragments{
+    transform: Transform,
+    velocity: Velocity,
+    asteroid_size_destroyed: AsteroidSize
+}
+
+// "Event" components
+struct EvCmpSpawnSprites;
+
+// With value
 struct Lifetime(instant::Duration);
 struct SpawnTime(instant::Instant);
-struct Asteroid;
-struct AsteroidBig;
-//struct AsteroidMedium;
-//struct AsteroidSmall;
-struct SpawnSprites;
+
+enum CollisionType {
+    Ship,
+    Asteroid,
+    Shield,
+    Bullet,
+}
+impl CollisionType {
+    fn is_ship(&self) -> bool {
+        matches!(*self, CollisionType::Ship)
+    }
+    fn is_asteroid(&self) -> bool {
+        matches!(*self, CollisionType::Asteroid)
+    }
+    fn is_shield(&self) -> bool {
+        matches!(*self, CollisionType::Shield)
+    }
+    fn is_bullet(&self) -> bool {
+        matches!(*self, CollisionType::Bullet)
+    }
+}
+
+enum SpriteType {
+    Ship,
+    Asteroid1,
+    Shield,
+    Bullet,
+}
+impl SpriteType {
+    fn is_ship(&self) -> bool {
+        matches!(*self, SpriteType::Ship)
+    }
+    fn is_asteroid_1(&self) -> bool {
+        matches!(*self, SpriteType::Asteroid1)
+    }
+    fn is_shield(&self) -> bool {
+        matches!(*self, SpriteType::Shield)
+    }
+    fn is_bullet(&self) -> bool {
+        matches!(*self, SpriteType::Bullet)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum AsteroidSize {
+    Small,
+    Medium,
+    Big
+}
+impl AsteroidSize {
+    fn is_small(&self) -> bool {
+        matches!(*self, AsteroidSize::Small)
+    }
+    fn is_medium(&self) -> bool {
+        matches!(*self, AsteroidSize::Medium)
+    }
+    fn is_big(&self) -> bool {
+        matches!(*self, AsteroidSize::Big)
+    }
+}
 
 struct Radius(f32);
+impl Default for Radius {
+    fn default() -> Self {
+        Self(20.0)
+    }
+}
+
 struct Mass(f32);
+impl Default for Mass {
+    fn default() -> Self {
+        Self(100.0)
+    }
+}
 
 struct Angle(f32);
 impl Default for Angle {
@@ -75,6 +146,7 @@ impl Default for Energy {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Velocity {
     x: f32,
     y: f32,
@@ -88,40 +160,190 @@ impl Default for Velocity {
 // Bundles
 
 #[derive(Bundle)]
-struct PlayerBundle {
+struct PhysicsObjectBundle {
     original: Original,
-    player: Player,
-    spawn_sprites: SpawnSprites,
+    spawn_sprites: EvCmpSpawnSprites,
     global_transform: GlobalTransform,
     transform: Transform,
     velocity: Velocity,
     angle: Angle,
-    acceleration: Acceleration,
-    energy: Energy,
     mass: Mass,
     radius: Radius,
 }
-impl Default for PlayerBundle {
+impl Default for PhysicsObjectBundle {
     fn default() -> Self {
         Self {
-            player: Player,
             original: Original,
-            spawn_sprites: SpawnSprites,
-            transform: Transform {
-                translation: Vec3::new(0.0, 0.0, 20.0),
-                ..Default::default()
-            },
+            spawn_sprites: EvCmpSpawnSprites,
             global_transform: GlobalTransform::default(),
+            transform: Transform::default(),
             velocity: Velocity::default(),
             angle: Angle::default(),
-            acceleration: Acceleration::default(),
-            energy: Energy::default(),
-            mass: Mass(30.0),
-            radius: Radius(30.0),
+            mass: Mass::default(),
+            radius: Radius::default(),
         }
     }
 }
 
+#[derive(Bundle)]
+struct ShipBundle {
+    player: Player,
+    collision_type: CollisionType,
+    sprite_type: SpriteType,
+    #[bundle]
+    physics_object: PhysicsObjectBundle,
+    acceleration: Acceleration,
+    energy: Energy,
+}
+impl Default for ShipBundle {
+    fn default() -> Self {
+        Self {
+            player: Player,
+            collision_type: CollisionType::Ship,
+            sprite_type: SpriteType::Ship,
+            physics_object: PhysicsObjectBundle {
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 20.0),
+                    ..Default::default()
+                },
+                mass: Mass(30.0),
+                radius: Radius(34.0),
+                ..Default::default()
+            },
+            acceleration: Acceleration::default(),
+            energy: Energy::default(),
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct BulletBundle {
+    collision_type: CollisionType,
+    sprite_type: SpriteType,
+    #[bundle]
+    physics_object: PhysicsObjectBundle,
+    spawn_time: SpawnTime,
+    lifetime: Lifetime,
+}
+impl Default for BulletBundle {
+    fn default() -> Self {
+        Self {
+            collision_type: CollisionType::Bullet,
+            sprite_type: SpriteType::Bullet,
+            physics_object: PhysicsObjectBundle {
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    ..Default::default()
+                },
+                mass: Mass(10.0),
+                radius: Radius(4.0),
+                ..Default::default()
+            },
+            spawn_time: SpawnTime(instant::Instant::now()),
+            lifetime: Lifetime(instant::Duration::new(1, 0)),
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct AsteroidBundle {
+    asteroid: Asteroid,
+    collision_type: CollisionType,
+    sprite_type: SpriteType,
+    #[bundle]
+    physics_object: PhysicsObjectBundle,
+}
+impl Default for AsteroidBundle {
+    fn default() -> Self {
+        Self {
+            asteroid: Asteroid,
+            collision_type: CollisionType::Asteroid,
+            sprite_type: SpriteType::Asteroid1,
+            physics_object: PhysicsObjectBundle {
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    ..Default::default()
+                },
+                mass: Mass(100.0),
+                radius: Radius(88.0),
+                ..Default::default()
+            }
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct AsteroidBigBundle {
+    asteroid_size: AsteroidSize,
+    #[bundle]
+    asteroid_bundle: AsteroidBundle,
+}
+impl Default for AsteroidBigBundle {
+    fn default() -> Self {
+        Self {
+            asteroid_size: AsteroidSize::Big,
+            asteroid_bundle: AsteroidBundle{
+                ..Default::default()
+            }
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct AsteroidMediumBundle {
+    asteroid_size: AsteroidSize,
+    #[bundle]
+    asteroid_bundle: AsteroidBundle,
+}
+impl Default for AsteroidMediumBundle {
+    fn default() -> Self {
+        Self {
+            asteroid_size: AsteroidSize::Medium,
+            asteroid_bundle: AsteroidBundle{
+                ..Default::default()
+            }
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct AsteroidSmallBundle {
+    asteroid_size: AsteroidSize,
+    #[bundle]
+    asteroid_bundle: AsteroidBundle,
+}
+impl Default for AsteroidSmallBundle {
+    fn default() -> Self {
+        Self {
+            asteroid_size: AsteroidSize::Small,
+            asteroid_bundle: AsteroidBundle{
+                ..Default::default()
+            }
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct ShieldBundle {
+    shield: Shield,
+    sprite_type: SpriteType,
+    spawn_sprites: EvCmpSpawnSprites,
+    transform: Transform,
+    global_transform: GlobalTransform,
+    radius: Radius,
+}
+impl Default for ShieldBundle {
+    fn default() -> Self {
+        Self {
+            shield: Shield,
+            sprite_type: SpriteType::Shield,
+            spawn_sprites: EvCmpSpawnSprites,
+            transform: Transform::default(),
+            global_transform: GlobalTransform::default(),
+            radius: Radius(30.0),
+        }
+    }
+}
 
 fn main() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -147,15 +369,16 @@ fn main() {
     })
     .add_plugins(DefaultPlugins);
 
-    app.add_startup_system(setup)
+    app
+    .add_startup_system(setup)
     .add_startup_stage(
         "setup_resources",
         SystemStage::single(setup_resources),
     )
     .add_startup_system(spawn_asteroids)
     .add_system(debug)
-    .add_system(control)
     .add_system(spawn_sprite_grid)
+    .add_system(control)
     .add_system(respawn_player)
     .add_system(despawn_after_lifetime)
     .add_system(collision_detection)
@@ -167,7 +390,18 @@ fn main() {
     .add_system(movement_rotation)
     .add_system(edge_looping)
     .add_system(normalize_angle)
-    .run();
+    .add_system(despawn_recursive)
+    .add_system(spawn_asteroid_fragments)
+    ;
+    
+    app
+    .add_event::<EvShieldActivated>()
+    .add_event::<EvShieldDeactivated>()
+    .add_event::<EvDespawnRecursive>()
+    .add_event::<EvSpawnAsteroidFragments>()
+    ;
+    
+    app.run();
 }
 
 // -- STARTUP SYSTEMS --
@@ -212,7 +446,6 @@ fn control(
     mut commands: Commands,
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
-    materials: Res<Materials>,
     mut query: Query<(
         Entity,
         &mut Velocity,
@@ -222,16 +455,17 @@ fn control(
         &Energy,
         With<Player>,
     )>,
+    mut shield_activated_writer: EventWriter<EvShieldActivated>,
+    mut shield_deactivated_writer: EventWriter<EvShieldDeactivated>,
 ) {
-    if let Ok((entity, mut velocity, acceleration, mut angle, mut transform_player, energy, _)) =
-        query.single_mut()
-    {
+    if let Ok((entity, mut velocity, acceleration, mut angle, mut transform_player, energy, _)) = query.single_mut() {
+
         // Shield
         if keyboard_input.just_pressed(KeyCode::Z) && energy.0 > 20. {
-            commands.entity(entity).insert(ShieldActivated);
+            shield_activated_writer.send(EvShieldActivated { entity: entity });
         }
         if keyboard_input.just_released(KeyCode::Z) {
-            commands.entity(entity).insert(ShieldDeactivated);
+            shield_deactivated_writer.send(EvShieldDeactivated { entity: entity });
         }
 
         // Rotation
@@ -259,29 +493,22 @@ fn control(
         let bullet_speed: f32 = 400.;
         if keyboard_input.just_pressed(KeyCode::X) {
             commands
-                .spawn_bundle(SpriteBundle {
-                    material: materials.asteroid_1.clone(),
-                    sprite: Sprite::new(Vec2::new(8., 8.)),
-                    transform: Transform {
-                        translation: Vec3::new(
-                            transform_player.translation.x + angle.0.cos() * 30.,
-                            transform_player.translation.y + angle.0.sin() * 30.,
-                            15.,
-                        ),
-                        ..Default::default()
-                    },
+                .spawn_bundle(BulletBundle {
+                    ..Default::default()
+                })
+                .insert(Transform {
+                    translation: Vec3::new(
+                        transform_player.translation.x + angle.0.cos() * 30.,
+                        transform_player.translation.y + angle.0.sin() * 30.,
+                        10.0,
+                    ),
                     ..Default::default()
                 })
                 .insert(Velocity {
                     x: velocity.x + angle.0.cos() * bullet_speed,
                     y: velocity.y + angle.0.sin() * bullet_speed,
                 })
-                .insert(Radius(4.0))
-                .insert(Mass(5.0))
-                .insert(Bullet)
-                .insert(Original)
-                .insert(SpawnTime(instant::Instant::now()))
-                .insert(Lifetime(instant::Duration::new(1, 0)));
+            ;
         }
     }
 }
@@ -289,24 +516,55 @@ fn control(
 fn spawn_sprite_grid (
     mut commands: Commands,
     materials: Res<Materials>,
-    mut query: Query<(Entity, Option<&Player>, With<SpawnSprites>)>
+    mut query: Query<(Entity, &SpriteType, With<EvCmpSpawnSprites>, Option<&AsteroidSize>)>
 ){
-    for (entity, player, _) in query.iter_mut() {
-
+    for (entity, sprite_type, _ev_cmp_spawn_sprites, asteroid_size) in query.iter_mut() {
         commands.entity(entity)
-        .remove::<SpawnSprites>();
+        .remove::<EvCmpSpawnSprites>();
+
+        // -- Z LAYERS --
+        // 30 Shield
+        // 20 Ship
+        // 10 Asteroids, bullets
+        // 00 Background
 
         let sprite_size: f32;
         let material: Handle<ColorMaterial>;
         let z_position: f32;
-        if let Some(_player) = player {
+        if sprite_type.is_ship() {
             material = materials.ship.clone();
             sprite_size = 60.0;
             z_position = 20.0;
-        } else {
+        }
+        else if let Some(asteroid_size) = asteroid_size {
             material = materials.asteroid_1.clone();
-            sprite_size = 180.0;
+            if asteroid_size.is_big() {
+                sprite_size = 180.0;
+                z_position = 10.0;
+            }
+            else if asteroid_size.is_medium() {
+                sprite_size = 80.0;
+                z_position = 10.0;
+            }
+            else {
+                sprite_size = 36.0;
+                z_position = 10.0;
+            }
+        }
+        else if sprite_type.is_shield() {
+            material = materials.shield.clone();
+            sprite_size = 72.0;
+            z_position = 30.0;
+        }
+        else if sprite_type.is_bullet() {
+            material = materials.asteroid_1.clone();
+            sprite_size = 8.0;
             z_position = 10.0;
+        }
+        else { // Always initialize values. TODO: Make this sprite something obvious for debugging
+            material = materials.ship.clone();
+            sprite_size = 200.0;
+            z_position = 1000.0;
         }
 
         let sprite_grid: Vec<Entity> = vec![
@@ -344,7 +602,7 @@ fn respawn_player (
 ){
     if let Ok(_) = query.single_mut() {
     } else {
-        commands.spawn_bundle(PlayerBundle {
+        commands.spawn_bundle(ShipBundle {
             ..Default::default()
         });
     }
@@ -353,61 +611,53 @@ fn respawn_player (
 fn spawn_asteroids (
     mut commands: Commands,
 ){
-    commands.spawn()
-    .insert(Original)
-    .insert(Asteroid)
-    .insert(AsteroidBig)
-    .insert(GlobalTransform::default())
+    commands.spawn_bundle(AsteroidBigBundle {
+        ..Default::default()
+    })
     .insert(Transform {
         translation: Vec3::new(100.0, 100.0, 10.),
-            ..Default::default()
-        })
+        ..Default::default()
+    })
     .insert(Velocity {
         x: 100.0,
         y: 0.0,
     })
-    .insert(Radius(90.))
-    .insert(Mass(100.))
-    .insert(SpawnSprites);
+    ;
 
-    commands.spawn()
-    .insert(Original)
-    .insert(Asteroid)
-    .insert(AsteroidBig)
-    .insert(GlobalTransform::default())
+    commands.spawn_bundle(AsteroidMediumBundle {
+        ..Default::default()
+    })
     .insert(Transform {
         translation: Vec3::new(800.0, 150.0, 10.),
-            ..Default::default()
-        })
+        ..Default::default()
+    })
     .insert(Velocity {
         x: -100.0,
         y: 0.0,
     })
-    .insert(Radius(90.))
-    .insert(Mass(100.))
-    .insert(SpawnSprites);
+    ;
 }
 
 fn despawn_after_lifetime(
-    mut commands: Commands,
+    mut despawn_recursive_writer: EventWriter<EvDespawnRecursive>,
     mut query: Query<(Entity, &SpawnTime, &Lifetime)>,
 ) {
     for (entity, spawn_time, lifetime) in query.iter_mut() {
         if spawn_time.0.elapsed() > lifetime.0 {
-            commands.entity(entity).despawn_recursive();
+            despawn_recursive_writer.send(EvDespawnRecursive{entity: entity});
         }
     }
 }
 
 fn collision_detection (
-    mut commands: Commands,
-    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, Option<&Player>, Option<&Bullet>, Option<&Asteroid>, Option<&ShieldActive>)>,
+    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType)>,
+    mut despawn_recursive_writer: EventWriter<EvDespawnRecursive>,
 ) {
     let mut iter = query.iter_combinations_mut();
 
     while let Some([
-        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, player_1, bullet_1, asteroid_1, shield_active_1),
-        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, player_2, bullet_2, asteroid_2, shield_active_2)
+        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1),
+        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2)
         ]) = iter.fetch_next()
     {
         let distance = shortest_distance(
@@ -419,26 +669,29 @@ fn collision_detection (
         if distance < radius_1.0 + radius_2.0 {
 
             // Despawn entity 1
-            if
-                player_1.is_some() && shield_active_1.is_none() && asteroid_2.is_some() ||
-                asteroid_1.is_some() && bullet_2.is_some()
-            {
-                commands.entity(entity_1).despawn_recursive();
+            if collision_type_1.is_ship() && collision_type_2.is_asteroid() {
+                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_1});
             }
 
             // Despawn entity 2
+            if collision_type_1.is_asteroid() && collision_type_2.is_ship() {
+                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_2});
+            }
+            
+            // Despawn both
             if
-                asteroid_1.is_some() && player_2.is_some() && shield_active_2.is_none() ||
-                bullet_1.is_some() && asteroid_2.is_some()
+            collision_type_1.is_asteroid() && collision_type_2.is_bullet() ||
+            collision_type_1.is_bullet() && collision_type_2.is_asteroid()
             {
-                commands.entity(entity_2).despawn_recursive();
+                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_1});
+                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_2});
             }
 
             // Bounce
             if
-                asteroid_1.is_some() && asteroid_2.is_some() ||
-                asteroid_1.is_some() && player_2.is_some() && shield_active_2.is_some() ||
-                player_1.is_some() && shield_active_2.is_some() && asteroid_2.is_some()
+            collision_type_1.is_asteroid() && collision_type_2.is_asteroid() ||
+            collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
+            collision_type_1.is_shield() && collision_type_2.is_asteroid()
             {
                 let (velocity_1_x_new, velocity_1_y_new, velocity_2_x_new, velocity_2_y_new) = velocity_after_bounce(
                     transform_1.translation.x,
@@ -461,6 +714,46 @@ fn collision_detection (
     }
 }
 
+fn despawn_recursive (
+    mut commands: Commands,
+    mut despawn_recursive_reader: EventReader<EvDespawnRecursive>,
+    mut spawn_asteroid_fragment_writer: EventWriter<EvSpawnAsteroidFragments>,
+    query: Query<(Entity, &Transform, &Velocity, &AsteroidSize)>
+) {
+    for event in despawn_recursive_reader.iter() {
+        commands.entity(event.entity).despawn_recursive();
+        if let Ok((_entity, transform, velocity, asteroid_size)) = query.get(event.entity) {
+            spawn_asteroid_fragment_writer.send(EvSpawnAsteroidFragments { transform: *transform, velocity: *velocity, asteroid_size_destroyed: *asteroid_size });
+        }
+    }
+}
+
+fn spawn_asteroid_fragments (
+    mut commands: Commands,
+    mut spawn_asteroid_fragment_reader: EventReader<EvSpawnAsteroidFragments>,
+) {
+    for event in spawn_asteroid_fragment_reader.iter() {
+        if event.asteroid_size_destroyed.is_big() {
+            commands.spawn_bundle(AsteroidMediumBundle::default())
+            .insert(Transform {
+                translation: Vec3::new(event.transform.translation.x, event.transform.translation.y, event.transform.translation.z),
+                ..Default::default()
+            })
+            .insert(Velocity{x: event.velocity.x, y: event.velocity.y})
+            ;
+        }
+        else if event.asteroid_size_destroyed.is_medium() {
+            commands.spawn_bundle(AsteroidSmallBundle::default())
+            .insert(Transform {
+                translation: Vec3::new(event.transform.translation.x, event.transform.translation.y, event.transform.translation.z),
+                ..Default::default()
+            })
+            .insert(Velocity{x: event.velocity.x, y: event.velocity.y})
+            ;
+        }
+    }
+}
+
 fn gain_energy(time: Res<Time>, mut query: Query<&mut Energy>) {
     if let Ok(mut energy) = query.single_mut() {
         energy.0 += 20. * time.delta_seconds();
@@ -472,54 +765,48 @@ fn gain_energy(time: Res<Time>, mut query: Query<&mut Energy>) {
 
 fn drain_energy(
     time: Res<Time>,
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Energy, With<ShieldActive>)>,
+    mut query: Query<(Entity, &mut Energy, &CollisionType)>,
+    mut shield_deactivated_writer: EventWriter<EvShieldDeactivated>,
 ) {
-    if let Ok((entity, mut energy, _)) = query.single_mut() {
-        energy.0 -= 100. * time.delta_seconds();
-        if energy.0 <= 0. {
-            commands.entity(entity).insert(ShieldDeactivated);
+    if let Ok((entity, mut energy, collision_type)) = query.single_mut(){
+        if collision_type.is_shield() {
+            energy.0 -= 100. * time.delta_seconds();
+            if energy.0 <= 0. {
+                shield_deactivated_writer.send(EvShieldDeactivated { entity: entity });
+            }
         }
     }
 }
 
 fn activate_shield(
     mut commands: Commands,
-    materials: Res<Materials>,
-    mut query: Query<(Entity, With<ShieldActivated>)>,
+    mut shield_activated_reader: EventReader<EvShieldActivated>,
 ) {
-    if let Ok((entity, _)) = query.single_mut() {
+    let event = shield_activated_reader.iter().next();
+    if event.is_some() {
+        let entity = event.unwrap().entity;
         let shield_entity = commands
-            .spawn_bundle(SpriteBundle {
-                material: materials.shield.clone(),
-                sprite: Sprite::new(Vec2::new(80., 80.)),
-                transform: Transform {
-                    translation: Vec3::new(0., 0., 20.),
-                    ..Default::default()
-                },
+            .spawn_bundle(ShieldBundle {
                 ..Default::default()
             })
-            .insert(Shield)
-            .insert(Radius(40.))
-            //.insert(Angle)
             .id();
 
-        commands.entity(entity).push_children(&[shield_entity]);
-        commands.entity(entity).insert(ShieldActive);
-        commands.entity(entity).remove::<ShieldActivated>();
+        commands.entity(entity).push_children(&[shield_entity])
+        .insert(CollisionType::Shield);
     }
 }
 
 fn deactivate_shield(
     mut commands: Commands,
     mut query_shield: Query<(Entity, With<Shield>)>,
-    mut query_shield_deactivated: Query<(Entity, With<ShieldDeactivated>)>,
+    mut shield_deactivated_reader: EventReader<EvShieldDeactivated>,
 ) {
-    if let Ok((entity, _)) = query_shield_deactivated.single_mut() {
-        commands.entity(entity).remove::<ShieldDeactivated>();
-        commands.entity(entity).remove::<ShieldActive>();
+    let event = shield_deactivated_reader.iter().next();
+    if event.is_some() {
+        let entity = event.unwrap().entity;
+        commands.entity(entity).insert(CollisionType::Ship);
         if let Ok((entity, _)) = query_shield.single_mut() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).despawn_recursive();
         }
     }
 }
