@@ -246,17 +246,17 @@ impl Default for BulletBundle {
 }
 
 #[derive(Bundle)]
-struct AsteroidBundle {
-    asteroid: Asteroid,
+struct AsteroidBigBundle {
+    asteroid_size: AsteroidSize,
     collision_type: CollisionType,
     sprite_type: SpriteType,
     #[bundle]
     physics_object: PhysicsObjectBundle,
 }
-impl Default for AsteroidBundle {
+impl Default for AsteroidBigBundle {
     fn default() -> Self {
         Self {
-            asteroid: Asteroid,
+            asteroid_size: AsteroidSize::Big,
             collision_type: CollisionType::Asteroid,
             sprite_type: SpriteType::Asteroid1,
             physics_object: PhysicsObjectBundle {
@@ -273,33 +273,26 @@ impl Default for AsteroidBundle {
 }
 
 #[derive(Bundle)]
-struct AsteroidBigBundle {
-    asteroid_size: AsteroidSize,
-    #[bundle]
-    asteroid_bundle: AsteroidBundle,
-}
-impl Default for AsteroidBigBundle {
-    fn default() -> Self {
-        Self {
-            asteroid_size: AsteroidSize::Big,
-            asteroid_bundle: AsteroidBundle{
-                ..Default::default()
-            }
-        }
-    }
-}
-
-#[derive(Bundle)]
 struct AsteroidMediumBundle {
     asteroid_size: AsteroidSize,
+    collision_type: CollisionType,
+    sprite_type: SpriteType,
     #[bundle]
-    asteroid_bundle: AsteroidBundle,
+    physics_object: PhysicsObjectBundle,
 }
 impl Default for AsteroidMediumBundle {
     fn default() -> Self {
         Self {
             asteroid_size: AsteroidSize::Medium,
-            asteroid_bundle: AsteroidBundle{
+            collision_type: CollisionType::Asteroid,
+            sprite_type: SpriteType::Asteroid1,
+            physics_object: PhysicsObjectBundle {
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    ..Default::default()
+                },
+                mass: Mass(50.0),
+                radius: Radius(39.0),
                 ..Default::default()
             }
         }
@@ -309,14 +302,24 @@ impl Default for AsteroidMediumBundle {
 #[derive(Bundle)]
 struct AsteroidSmallBundle {
     asteroid_size: AsteroidSize,
+    collision_type: CollisionType,
+    sprite_type: SpriteType,
     #[bundle]
-    asteroid_bundle: AsteroidBundle,
+    physics_object: PhysicsObjectBundle,
 }
 impl Default for AsteroidSmallBundle {
     fn default() -> Self {
         Self {
             asteroid_size: AsteroidSize::Small,
-            asteroid_bundle: AsteroidBundle{
+            collision_type: CollisionType::Asteroid,
+            sprite_type: SpriteType::Asteroid1,
+            physics_object: PhysicsObjectBundle {
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    ..Default::default()
+                },
+                mass: Mass(20.0),
+                radius: Radius(17.0),
                 ..Default::default()
             }
         }
@@ -375,7 +378,7 @@ fn main() {
         "setup_resources",
         SystemStage::single(setup_resources),
     )
-    .add_startup_system(spawn_asteroids)
+    .add_startup_system(spawn_player_and_asteroids)
     .add_system(debug)
     .add_system(spawn_sprite_grid)
     .add_system(control)
@@ -431,6 +434,45 @@ fn setup_resources(mut commands: Commands, materials: Res<Materials>) {
         },
         ..Default::default()
     });
+}
+
+fn spawn_player_and_asteroids (
+    mut commands: Commands,
+){
+    let mut positions = Vec::<Vec2>::new();
+    
+    positions.push(Vec2::default());
+    commands.spawn_bundle(ShipBundle {
+        ..Default::default()
+    })
+    .insert(Transform {
+        translation: Vec3::new(
+            positions.last().unwrap().x,
+            positions.last().unwrap().y,
+            AsteroidBigBundle::default().physics_object.transform.translation.z,
+        ),
+        ..Default::default()
+    });
+
+    for _i in 0..5 {
+        positions.push(random_free_position(&positions));
+        commands.spawn_bundle(AsteroidBigBundle {
+            ..Default::default()
+        })
+        .insert(Transform {
+            translation: Vec3::new(
+                positions.last().unwrap().x,
+                positions.last().unwrap().y,
+                AsteroidBigBundle::default().physics_object.transform.translation.z,
+            ),
+            ..Default::default()
+        })
+        .insert(Velocity {
+            x: rf32(0.0, 100.0),
+            y: rf32(0.0, 100.0),
+        })
+        ;
+    }
 }
 
 // -- SYSTEMS --
@@ -598,44 +640,32 @@ fn spawn_sprite_grid (
 
 fn respawn_player (
     mut commands: Commands,
-    mut query: Query<With<Player>>
+    mut query: Query<With<Player>>,
+    query_free_space: Query<(&Transform, &With<CollisionType>)>,
 ){
     if let Ok(_) = query.single_mut() {
     } else {
+        let mut positions = Vec::<Vec2>::new();
+        for (transform, _) in query_free_space.iter() {
+            positions.push(Vec2::new(
+                transform.translation.x,
+                transform.translation.y,
+            ))
+        }
+        positions.push(random_free_position(&positions));
         commands.spawn_bundle(ShipBundle {
             ..Default::default()
-        });
+        })
+        .insert(Transform {
+            translation: Vec3::new(
+                positions.last().unwrap().x,
+                positions.last().unwrap().y,
+                AsteroidBigBundle::default().physics_object.transform.translation.z,
+            ),
+            ..Default::default()
+        })
+        ;
     }
-}
-
-fn spawn_asteroids (
-    mut commands: Commands,
-){
-    commands.spawn_bundle(AsteroidBigBundle {
-        ..Default::default()
-    })
-    .insert(Transform {
-        translation: Vec3::new(100.0, 100.0, 10.),
-        ..Default::default()
-    })
-    .insert(Velocity {
-        x: 100.0,
-        y: 0.0,
-    })
-    ;
-
-    commands.spawn_bundle(AsteroidMediumBundle {
-        ..Default::default()
-    })
-    .insert(Transform {
-        translation: Vec3::new(800.0, 150.0, 10.),
-        ..Default::default()
-    })
-    .insert(Velocity {
-        x: -100.0,
-        y: 0.0,
-    })
-    ;
 }
 
 fn despawn_after_lifetime(
@@ -870,6 +900,26 @@ fn normalize_angle(mut query: Query<&mut Angle>) {
 fn rf32(low: f32, high: f32) -> f32 {
     let mut rng = rand::thread_rng();
     return rng.gen::<f32>() * (high - low) + low;
+}
+
+// Returns a random position that is not currently occupied by an entity with a CollsionType component
+fn random_free_position(
+    position_vec: &Vec<Vec2>
+) -> Vec2 {
+    let mut position_free = false;
+    let mut x_pos: f32 = 0.0;
+    let mut y_pos: f32 = 0.0;
+    while position_free == false {
+        position_free = true;
+        x_pos = rf32(0.0, WINDOW_WIDTH);
+        y_pos = rf32(0.0, WINDOW_HEIGHT);
+        for position in position_vec.iter() {
+            if shortest_distance(position.x, position.y, x_pos, y_pos) < 200.0 {
+                position_free = false;
+            }
+        }
+    }
+    return Vec2::new(x_pos, y_pos);
 }
 
 // Returns the shortest distance between entities, taking edge looping into account
