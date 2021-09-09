@@ -1,5 +1,4 @@
 // TO DO - Rough order
-// Asteroids splitting when destroyed
 // GUI
 // Levels
 
@@ -16,6 +15,7 @@ const SHIP_SPRITE: &str = "ship.png";
 const SHIELD_SPRITE: &str = "shield.png";
 const BACKGROUND_SPRITE: &str = "background.png";
 const ASTEROID_1_SPRITE: &str = "asteroid_1.png";
+const BULLET_SPRITE: &str = "laser_sprites/01.png";
 const PI: f32 = std::f32::consts::PI;
 const WINDOW_WIDTH: f32 = 1280.0;
 const WINDOW_HEIGHT: f32 = 720.0;
@@ -25,6 +25,7 @@ struct Materials {
     shield: Handle<ColorMaterial>,
     background: Handle<ColorMaterial>,
     asteroid_1: Handle<ColorMaterial>,
+    bullet: Handle<ColorMaterial>,
 }
 
 // Tags
@@ -32,12 +33,12 @@ struct Original;
 struct GridSprite;
 struct Player;
 struct Shield;
-struct Asteroid;
 
 // Events
-struct EvDespawnRecursive{entity: Entity}
-struct EvShieldActivated{entity: Entity}
-struct EvShieldDeactivated{entity: Entity}
+//struct EvRespawnPlayer;
+//struct EvDespawnRecursive{entity: Entity}
+//struct EvActivateShield{entity: Entity}
+//struct EvDeactivateShield{entity: Entity}
 struct EvSpawnAsteroidFragments{
     transform: Transform,
     velocity: Velocity,
@@ -128,21 +129,28 @@ impl Default for Mass {
 struct Angle(f32);
 impl Default for Angle {
     fn default() -> Self {
-        Self(PI / 2.)
+        Self(PI / 2.0)
     }
 }
 
 struct Acceleration(f32);
 impl Default for Acceleration {
     fn default() -> Self {
-        Self(300.)
+        Self(300.0)
     }
 }
 
 struct Energy(f32);
 impl Default for Energy {
     fn default() -> Self {
-        Self(100.)
+        Self(100.0)
+    }
+}
+
+struct ChargeLevel(f32);
+impl Default for ChargeLevel {
+    fn default() -> Self {
+        Self(0.0)
     }
 }
 
@@ -194,6 +202,7 @@ struct ShipBundle {
     physics_object: PhysicsObjectBundle,
     acceleration: Acceleration,
     energy: Energy,
+    charge_level: ChargeLevel,
 }
 impl Default for ShipBundle {
     fn default() -> Self {
@@ -212,6 +221,7 @@ impl Default for ShipBundle {
             },
             acceleration: Acceleration::default(),
             energy: Energy::default(),
+            charge_level: ChargeLevel::default(),
         }
     }
 }
@@ -224,6 +234,7 @@ struct BulletBundle {
     physics_object: PhysicsObjectBundle,
     spawn_time: SpawnTime,
     lifetime: Lifetime,
+    charge_level: ChargeLevel,
 }
 impl Default for BulletBundle {
     fn default() -> Self {
@@ -241,6 +252,7 @@ impl Default for BulletBundle {
             },
             spawn_time: SpawnTime(instant::Instant::now()),
             lifetime: Lifetime(instant::Duration::new(1, 0)),
+            charge_level: ChargeLevel::default(),
         }
     }
 }
@@ -367,7 +379,7 @@ fn main() {
         title: "CometBuster".to_string(),
         width: WINDOW_WIDTH,
         height: WINDOW_HEIGHT,
-//        cursor_visible: false,
+        cursor_visible: false,
         ..Default::default()
     })
     .add_plugins(DefaultPlugins);
@@ -379,28 +391,23 @@ fn main() {
         SystemStage::single(setup_resources),
     )
     .add_startup_system(spawn_player_and_asteroids)
-    .add_system(debug)
-    .add_system(spawn_sprite_grid)
-    .add_system(control)
-    .add_system(respawn_player)
-    .add_system(despawn_after_lifetime)
-    .add_system(collision_detection)
+    .add_system(debug.before("cd"))
+    .add_system(despawn_after_lifetime.before("cd"))
+    .add_system(drain_energy.before("cd"))
+    .add_system(collision_detection.label("cd"))
+    .add_system(control.after("cd"))
+    .add_system(spawn_sprite_grid.after("cd"))
+    .add_system(respawn_player.after("cd"))
+    .add_system(spawn_asteroid_fragments.after("cd"))
     .add_system(gain_energy)
-    .add_system(drain_energy)
-    .add_system(activate_shield)
-    .add_system(deactivate_shield)
     .add_system(movement_translation)
     .add_system(movement_rotation)
     .add_system(edge_looping)
     .add_system(normalize_angle)
-    .add_system(despawn_recursive)
-    .add_system(spawn_asteroid_fragments)
     ;
     
     app
-    .add_event::<EvShieldActivated>()
-    .add_event::<EvShieldDeactivated>()
-    .add_event::<EvDespawnRecursive>()
+//    .add_event::<EvRespawnPlayer>()
     .add_event::<EvSpawnAsteroidFragments>()
     ;
     
@@ -421,6 +428,7 @@ fn setup(
         shield: materials.add(asset_server.load(SHIELD_SPRITE).into()),
         background: materials.add(asset_server.load(BACKGROUND_SPRITE).into()),
         asteroid_1: materials.add(asset_server.load(ASTEROID_1_SPRITE).into()),
+        bullet: materials.add(asset_server.load(BULLET_SPRITE).into()),
     });
 }
 
@@ -468,8 +476,8 @@ fn spawn_player_and_asteroids (
             ..Default::default()
         })
         .insert(Velocity {
-            x: rf32(0.0, 100.0),
-            y: rf32(0.0, 100.0),
+            x: rf32(-100.0, 100.0),
+            y: rf32(-100.0, 100.0),
         })
         ;
     }
@@ -478,9 +486,14 @@ fn spawn_player_and_asteroids (
 // -- SYSTEMS --
 
 fn debug(
+    mut commands: Commands,
     keyboard_input: Res<Input<KeyCode>>,
+    mut query: Query<(Entity, &Player)>,
 ) {
     if keyboard_input.just_pressed(KeyCode::F1) {
+        for (entity, _) in query.iter_mut() {
+            commands.entity(entity).despawn_recursive();
+        }
     }
 }
 
@@ -495,19 +508,30 @@ fn control(
         &mut Angle,
         &mut Transform,
         &Energy,
+        &mut ChargeLevel,
         With<Player>,
     )>,
-    mut shield_activated_writer: EventWriter<EvShieldActivated>,
-    mut shield_deactivated_writer: EventWriter<EvShieldDeactivated>,
+    mut query_shield: Query<(Entity, With<Shield>)>,
 ) {
-    if let Ok((entity, mut velocity, acceleration, mut angle, mut transform_player, energy, _)) = query.single_mut() {
+    if let Ok((entity, mut velocity, acceleration, mut angle, mut transform, energy, mut charge_level, _)) = query.single_mut() {
 
-        // Shield
+        // Activate Shield
         if keyboard_input.just_pressed(KeyCode::Z) && energy.0 > 20. {
-            shield_activated_writer.send(EvShieldActivated { entity: entity });
+            let shield_entity = commands
+            .spawn_bundle(ShieldBundle {
+                ..Default::default()
+            })
+            .id();
+
+            commands.entity(entity).push_children(&[shield_entity])
+            .insert(CollisionType::Shield);
         }
+        // Deactivate Shield
         if keyboard_input.just_released(KeyCode::Z) {
-            shield_deactivated_writer.send(EvShieldDeactivated { entity: entity });
+            commands.entity(entity).insert(CollisionType::Ship);
+            if let Ok((shield_entity, _)) = query_shield.single_mut() {
+                commands.entity(shield_entity).despawn_recursive();
+            }
         }
 
         // Rotation
@@ -525,31 +549,34 @@ fn control(
             velocity.y += acceleration.0 * angle.0.sin() * time.delta_seconds();
         }
         if keyboard_input.pressed(KeyCode::R) {
-            transform_player.translation.x = 0.;
-            transform_player.translation.y = 0.;
-            velocity.x = 0.;
-            velocity.y = 0.
+            transform.translation.x = 0.0;
+            transform.translation.y = 0.0;
+            velocity.x = 0.0;
+            velocity.y = 0.0;
         }
 
         // Fire
-        let bullet_speed: f32 = 400.;
-        if keyboard_input.just_pressed(KeyCode::X) {
-            commands
-                .spawn_bundle(BulletBundle {
-                    ..Default::default()
-                })
-                .insert(Transform {
-                    translation: Vec3::new(
-                        transform_player.translation.x + angle.0.cos() * 30.,
-                        transform_player.translation.y + angle.0.sin() * 30.,
-                        10.0,
-                    ),
-                    ..Default::default()
-                })
-                .insert(Velocity {
-                    x: velocity.x + angle.0.cos() * bullet_speed,
-                    y: velocity.y + angle.0.sin() * bullet_speed,
-                })
+        let bullet_speed: f32 = 400.0;
+        if keyboard_input.pressed(KeyCode::X) {
+            charge_level.0 += 3.0 * time.delta_seconds();
+        }
+        if keyboard_input.just_released(KeyCode::X) {
+            commands.spawn_bundle(BulletBundle {
+                ..Default::default()
+            })
+            .insert(Transform {
+                translation: Vec3::new(
+                    transform.translation.x + angle.0.cos() * 30.0,
+                    transform.translation.y + angle.0.sin() * 30.0,
+                    10.0,
+                ),
+                ..Default::default()
+            })
+            .insert(Velocity {
+                x: velocity.x + angle.0.cos() * bullet_speed,
+                y: velocity.y + angle.0.sin() * bullet_speed,
+            })
+            .insert(ChargeLevel(charge_level.0))
             ;
         }
     }
@@ -599,8 +626,8 @@ fn spawn_sprite_grid (
             z_position = 30.0;
         }
         else if sprite_type.is_bullet() {
-            material = materials.asteroid_1.clone();
-            sprite_size = 8.0;
+            material = materials.bullet.clone();
+            sprite_size = 20.0;
             z_position = 10.0;
         }
         else { // Always initialize values. TODO: Make this sprite something obvious for debugging
@@ -640,10 +667,10 @@ fn spawn_sprite_grid (
 
 fn respawn_player (
     mut commands: Commands,
-    mut query: Query<With<Player>>,
     query_free_space: Query<(&Transform, &With<CollisionType>)>,
+    mut query_player: Query<With<Player>>,
 ){
-    if let Ok(_) = query.single_mut() {
+    if let Ok(_) = query_player.single_mut() {
     } else {
         let mut positions = Vec::<Vec2>::new();
         for (transform, _) in query_free_space.iter() {
@@ -669,25 +696,27 @@ fn respawn_player (
 }
 
 fn despawn_after_lifetime(
-    mut despawn_recursive_writer: EventWriter<EvDespawnRecursive>,
+    mut commands: Commands,
     mut query: Query<(Entity, &SpawnTime, &Lifetime)>,
 ) {
     for (entity, spawn_time, lifetime) in query.iter_mut() {
         if spawn_time.0.elapsed() > lifetime.0 {
-            despawn_recursive_writer.send(EvDespawnRecursive{entity: entity});
+            commands.entity(entity).despawn_recursive();
         }
     }
 }
 
 fn collision_detection (
-    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType)>,
-    mut despawn_recursive_writer: EventWriter<EvDespawnRecursive>,
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>)>,
+    mut spawn_asteroid_fragments_writer: EventWriter<EvSpawnAsteroidFragments>,
 ) {
     let mut iter = query.iter_combinations_mut();
 
     while let Some([
-        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1),
-        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2)
+        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1, asteroid_size_1),
+        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2, asteroid_size_2)
         ]) = iter.fetch_next()
     {
         let distance = shortest_distance(
@@ -697,63 +726,50 @@ fn collision_detection (
             transform_2.translation.y,
         );
         if distance < radius_1.0 + radius_2.0 {
-
-            // Despawn entity 1
+            // Player vs Asteroid -> despawn Player
             if collision_type_1.is_ship() && collision_type_2.is_asteroid() {
-                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_1});
+                commands.entity(entity_1).despawn_recursive();
             }
-
-            // Despawn entity 2
             if collision_type_1.is_asteroid() && collision_type_2.is_ship() {
-                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_2});
+                commands.entity(entity_2).despawn_recursive();
             }
             
-            // Despawn both
+            // Bullet vs Asteroid -> despawn both
             if
-            collision_type_1.is_asteroid() && collision_type_2.is_bullet() ||
+            collision_type_1.is_asteroid() && collision_type_2.is_bullet()
+            {
+                commands.entity(entity_1).despawn_recursive();
+                commands.entity(entity_2).despawn_recursive();
+                if let Some(asteroid_size_1) = asteroid_size_1 {
+                    spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *transform_1, velocity: *velocity_1, asteroid_size_destroyed: *asteroid_size_1});
+                }
+            }
+            if
             collision_type_1.is_bullet() && collision_type_2.is_asteroid()
             {
-                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_1});
-                despawn_recursive_writer.send(EvDespawnRecursive{entity: entity_2});
+                commands.entity(entity_1).despawn_recursive();
+                commands.entity(entity_2).despawn_recursive();
+                if let Some(asteroid_size_2) = asteroid_size_2 {
+                    spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *transform_2, velocity: *velocity_2, asteroid_size_destroyed: *asteroid_size_2});
+                }
             }
 
-            // Bounce
+            // Asteroid vs Asteroid, Asteroid vs Shield -> Bounce
             if
             collision_type_1.is_asteroid() && collision_type_2.is_asteroid() ||
             collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
             collision_type_1.is_shield() && collision_type_2.is_asteroid()
             {
-                let (velocity_1_x_new, velocity_1_y_new, velocity_2_x_new, velocity_2_y_new) = velocity_after_bounce(
-                    transform_1.translation.x,
-                    transform_1.translation.y,
-                    velocity_1.x,
-                    velocity_1.y,
+                collision_bounce(
+                    transform_1.translation,
+                    &mut velocity_1,
                     mass_1.0,
-                    transform_2.translation.x,
-                    transform_2.translation.y,
-                    velocity_2.x,
-                    velocity_2.y,
+                    transform_2.translation,
+                    &mut velocity_2,
                     mass_2.0,
+                    &time,
                 );
-                velocity_1.x = velocity_1_x_new;
-                velocity_1.y = velocity_1_y_new;
-                velocity_2.x = velocity_2_x_new;
-                velocity_2.y = velocity_2_y_new;
             }
-        }
-    }
-}
-
-fn despawn_recursive (
-    mut commands: Commands,
-    mut despawn_recursive_reader: EventReader<EvDespawnRecursive>,
-    mut spawn_asteroid_fragment_writer: EventWriter<EvSpawnAsteroidFragments>,
-    query: Query<(Entity, &Transform, &Velocity, &AsteroidSize)>
-) {
-    for event in despawn_recursive_reader.iter() {
-        commands.entity(event.entity).despawn_recursive();
-        if let Ok((_entity, transform, velocity, asteroid_size)) = query.get(event.entity) {
-            spawn_asteroid_fragment_writer.send(EvSpawnAsteroidFragments { transform: *transform, velocity: *velocity, asteroid_size_destroyed: *asteroid_size });
         }
     }
 }
@@ -762,24 +778,43 @@ fn spawn_asteroid_fragments (
     mut commands: Commands,
     mut spawn_asteroid_fragment_reader: EventReader<EvSpawnAsteroidFragments>,
 ) {
+    let added_velocity = 40.0;
+    let retained_velocity_factor = 0.9;
     for event in spawn_asteroid_fragment_reader.iter() {
+        let start_angle = rf32(0.0, 2.0 * PI / 3.0);
         if event.asteroid_size_destroyed.is_big() {
-            commands.spawn_bundle(AsteroidMediumBundle::default())
-            .insert(Transform {
-                translation: Vec3::new(event.transform.translation.x, event.transform.translation.y, event.transform.translation.z),
-                ..Default::default()
-            })
-            .insert(Velocity{x: event.velocity.x, y: event.velocity.y})
-            ;
+            for i in 0..3 {
+                let j = i as f32;
+                let spawn_circle_radius: f32 = AsteroidBigBundle::default().physics_object.radius.0 * 0.54;
+                let x_pos = event.transform.translation.x + (j * 2.0 * PI / 3.0 + start_angle).cos() * spawn_circle_radius;
+                let y_pos = event.transform.translation.y + (j * 2.0 * PI / 3.0 + start_angle).sin() * spawn_circle_radius;
+                let x_vel = rf32(-added_velocity, added_velocity);
+                let y_vel = rf32(-added_velocity, added_velocity);
+                commands.spawn_bundle(AsteroidMediumBundle::default())
+                .insert(Transform {
+                    translation: Vec3::new(x_pos, y_pos, event.transform.translation.z),
+                    ..Default::default()
+                })
+                .insert(Velocity{x: event.velocity.x * retained_velocity_factor + x_vel, y: event.velocity.y * retained_velocity_factor + y_vel})
+                ;
+            }
         }
         else if event.asteroid_size_destroyed.is_medium() {
-            commands.spawn_bundle(AsteroidSmallBundle::default())
-            .insert(Transform {
-                translation: Vec3::new(event.transform.translation.x, event.transform.translation.y, event.transform.translation.z),
-                ..Default::default()
-            })
-            .insert(Velocity{x: event.velocity.x, y: event.velocity.y})
-            ;
+            for i in 0..3 {
+                let j = i as f32;
+                let spawn_circle_radius: f32 = AsteroidMediumBundle::default().physics_object.radius.0 * 0.54;
+                let x_pos = event.transform.translation.x + (j * 2.0 * PI / 3.0 + start_angle).cos() * spawn_circle_radius;
+                let y_pos = event.transform.translation.y + (j * 2.0 * PI / 3.0 + start_angle).sin() * spawn_circle_radius;
+                let x_vel = rf32(-added_velocity, added_velocity);
+                let y_vel = rf32(-added_velocity, added_velocity);
+                commands.spawn_bundle(AsteroidSmallBundle::default())
+                .insert(Transform {
+                    translation: Vec3::new(x_pos, y_pos, event.transform.translation.z),
+                    ..Default::default()
+                })
+                .insert(Velocity{x: event.velocity.x * retained_velocity_factor + x_vel, y: event.velocity.y * retained_velocity_factor + y_vel})
+                ;
+            }
         }
     }
 }
@@ -794,49 +829,21 @@ fn gain_energy(time: Res<Time>, mut query: Query<&mut Energy>) {
 }
 
 fn drain_energy(
+    mut commands: Commands,
     time: Res<Time>,
     mut query: Query<(Entity, &mut Energy, &CollisionType)>,
-    mut shield_deactivated_writer: EventWriter<EvShieldDeactivated>,
+    mut query_shield: Query<(Entity, With<Shield>)>,
+//    mut shield_deactivated_writer: EventWriter<EvDeactivateShield>,
 ) {
     if let Ok((entity, mut energy, collision_type)) = query.single_mut(){
         if collision_type.is_shield() {
             energy.0 -= 100. * time.delta_seconds();
             if energy.0 <= 0. {
-                shield_deactivated_writer.send(EvShieldDeactivated { entity: entity });
+                commands.entity(entity).insert(CollisionType::Ship);
+                if let Ok((shield_entity, _)) = query_shield.single_mut() {
+                    commands.entity(shield_entity).despawn_recursive();
+                }
             }
-        }
-    }
-}
-
-fn activate_shield(
-    mut commands: Commands,
-    mut shield_activated_reader: EventReader<EvShieldActivated>,
-) {
-    let event = shield_activated_reader.iter().next();
-    if event.is_some() {
-        let entity = event.unwrap().entity;
-        let shield_entity = commands
-            .spawn_bundle(ShieldBundle {
-                ..Default::default()
-            })
-            .id();
-
-        commands.entity(entity).push_children(&[shield_entity])
-        .insert(CollisionType::Shield);
-    }
-}
-
-fn deactivate_shield(
-    mut commands: Commands,
-    mut query_shield: Query<(Entity, With<Shield>)>,
-    mut shield_deactivated_reader: EventReader<EvShieldDeactivated>,
-) {
-    let event = shield_deactivated_reader.iter().next();
-    if event.is_some() {
-        let entity = event.unwrap().entity;
-        commands.entity(entity).insert(CollisionType::Ship);
-        if let Ok((entity, _)) = query_shield.single_mut() {
-            commands.entity(entity).despawn_recursive();
         }
     }
 }
@@ -938,39 +945,43 @@ fn shortest_distance (x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 }
 
 // Returns the new X and Y velocities of entities after they bounce
-fn velocity_after_bounce(
+fn collision_bounce(
     // Get position, velocity and mass of both entities
-    x1: f32,
-    y1: f32,
-    xv1: f32,
-    yv1: f32,
+    t1: Vec3,
+    v1: &mut Velocity,
     m1: f32,
-    mut x2: f32,
-    mut y2: f32,
-    xv2: f32,
-    yv2: f32,
+    mut t2: Vec3,
+    v2: &mut Velocity,
     m2: f32,
-    // Returns new x and y velocities
-) -> (f32, f32, f32, f32) {
-    if (x2 + WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { x2 += WINDOW_WIDTH; }
-    if (x2 - WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { x2 -= WINDOW_WIDTH; }
-    if (y2 + WINDOW_HEIGHT - y1).abs() < (y2 - y1).abs() { y2 += WINDOW_HEIGHT; }
-    if (y2 - WINDOW_HEIGHT - y1).abs() < (y2 - y1).abs() { y2 -= WINDOW_HEIGHT; }
+    time: &Res<Time>,
+) {
+    // Check if the entities are moving towards each other
+    if shortest_distance(
+        t1.x + time.delta_seconds() * v1.x,
+        t1.y + time.delta_seconds() * v1.y,
+        t2.x + time.delta_seconds() * v2.x,
+        t2.y + time.delta_seconds() * v2.y,
+    ) <
+        shortest_distance(t1.x, t1.y, t2.x, t2.y)
+    {
+        if (t2.x + WINDOW_WIDTH - t1.x).abs() < (t2.x - t1.x).abs() { t2.x += WINDOW_WIDTH; }
+        if (t2.x - WINDOW_WIDTH - t1.x).abs() < (t2.x - t1.x).abs() { t2.x -= WINDOW_WIDTH; }
+        if (t2.y + WINDOW_HEIGHT - t1.y).abs() < (t2.y - t1.y).abs() { t2.y += WINDOW_HEIGHT; }
+        if (t2.y - WINDOW_HEIGHT - t1.y).abs() < (t2.y - t1.y).abs() { t2.y -= WINDOW_HEIGHT; }
 
-    let mut t1 = (yv1/xv1).atan(); // Theta, ent 1
-    if xv1 < 0.0 { t1 += PI; } // .atan() can only calculate an angle, not which direction along that angle
-    let mut t2 = (yv2/xv2).atan(); // Theta, ent 2
-    if xv2 < 0.0 { t2 += PI; } // .atan() can only calculate an angle, not which direction along that angle
-    let v1 = xv1.hypot(yv1).abs(); // Velocity, ent 1
-    let v2 = xv2.hypot(yv2).abs(); // Velocity, ent 2
-    let mut t12 = ((y2-y1)/(x2-x1)).atan(); // Theta between the entities
-    if x2 < x1 { t12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
+        let mut th1 = (v1.y / v1.x).atan(); // Theta, ent 1
+        if v1.x < 0.0 { th1 += PI; } // .atan() can only calculate an angle, not which direction along that angle
+        let mut th2 = (v2.y / v2.x).atan(); // Theta, ent 2
+        if v2.x < 0.0 { th2 += PI; } // .atan() can only calculate an angle, not which direction along that angle
+        let vt1 = v1.x.hypot(v1.y).abs(); // Velocity Total, ent 1
+        let vt2 = v2.x.hypot(v2.y).abs(); // Velocity Total, ent 2
+        let mut t12 = ((t2.y-t1.y)/(t2.x-t1.x)).atan(); // Theta between the entities
+        if t2.x < t1.x { t12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
 
-    // https://en.wikipedia.org/wiki/Elastic_collision - Two-dimensional collision with two moving objects
-    let xv1_new = (v1 * (t1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * v2 * ( t2 - t12 ).cos() ) / ( m1 + m2 ) * t12.cos() + v1 * ( t1 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
-    let yv1_new = (v1 * (t1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * v2 * ( t2 - t12 ).cos() ) / ( m1 + m2 ) * t12.sin() + v1 * ( t1 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
-    let xv2_new = (v2 * (t2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * v1 * ( t1 - t12 ).cos() ) / ( m2 + m1 ) * t12.cos() + v2 * ( t2 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
-    let yv2_new = (v2 * (t2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * v1 * ( t1 - t12 ).cos() ) / ( m2 + m1 ) * t12.sin() + v2 * ( t2 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
-
-    return (xv1_new, yv1_new, xv2_new, yv2_new);
+        // https://en.wikipedia.org/wiki/Elastic_collision - Two-dimensional collision with two moving objects
+        v1.x = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.cos() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
+        v1.y = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.sin() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+        v2.x = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.cos() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
+        v2.y = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.sin() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+    }
 }
