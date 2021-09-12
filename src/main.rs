@@ -391,14 +391,14 @@ fn main() {
         SystemStage::single(setup_resources),
     )
     .add_startup_system(spawn_player_and_asteroids)
-    .add_system(debug.before("cd"))
-    .add_system(despawn_after_lifetime.before("cd"))
-    .add_system(drain_energy.before("cd"))
-    .add_system(collision_detection.label("cd"))
-    .add_system(control.after("cd"))
-    .add_system(spawn_sprite_grid.after("cd"))
-    .add_system(respawn_player.after("cd"))
-    .add_system(spawn_asteroid_fragments.after("cd"))
+    .add_system(debug)
+    .add_system(despawn_after_lifetime)
+    .add_system(drain_energy)
+    .add_system(collision_detection)
+    .add_system(control)
+    .add_system(spawn_sprite_grid)
+    .add_system(respawn_player)
+    .add_system(spawn_asteroid_fragments)
     .add_system(gain_energy)
     .add_system(movement_translation)
     .add_system(movement_rotation)
@@ -559,6 +559,7 @@ fn control(
         let bullet_speed: f32 = 400.0;
         if keyboard_input.pressed(KeyCode::X) {
             charge_level.0 += 3.0 * time.delta_seconds();
+            if charge_level.0 > 2.0 {charge_level.0 = 2.0;}
         }
         if keyboard_input.just_released(KeyCode::X) {
             commands.spawn_bundle(BulletBundle {
@@ -572,12 +573,14 @@ fn control(
                 ),
                 ..Default::default()
             })
+            .insert(Angle(angle.0))
             .insert(Velocity {
                 x: velocity.x + angle.0.cos() * bullet_speed,
                 y: velocity.y + angle.0.sin() * bullet_speed,
             })
             .insert(ChargeLevel(charge_level.0))
             ;
+            commands.entity(entity).insert(ChargeLevel::default());
         }
     }
 }
@@ -585,9 +588,9 @@ fn control(
 fn spawn_sprite_grid (
     mut commands: Commands,
     materials: Res<Materials>,
-    mut query: Query<(Entity, &SpriteType, With<EvCmpSpawnSprites>, Option<&AsteroidSize>)>
+    mut query: Query<(Entity, &SpriteType, With<EvCmpSpawnSprites>, Option<&AsteroidSize>, Option<&ChargeLevel>)>
 ){
-    for (entity, sprite_type, _ev_cmp_spawn_sprites, asteroid_size) in query.iter_mut() {
+    for (entity, sprite_type, _ev_cmp_spawn_sprites, asteroid_size, charge_level) in query.iter_mut() {
         commands.entity(entity)
         .remove::<EvCmpSpawnSprites>();
 
@@ -625,9 +628,9 @@ fn spawn_sprite_grid (
             sprite_size = 72.0;
             z_position = 30.0;
         }
-        else if sprite_type.is_bullet() {
+        else if let Some(charge_level) = charge_level {
             material = materials.bullet.clone();
-            sprite_size = 20.0;
+            sprite_size = 30.0 * (1.0 + 1.8 * (charge_level.0 / 1.0).floor());
             z_position = 10.0;
         }
         else { // Always initialize values. TODO: Make this sprite something obvious for debugging
@@ -709,14 +712,14 @@ fn despawn_after_lifetime(
 fn collision_detection (
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>)>,
+    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>, Option<&ChargeLevel>)>,
     mut spawn_asteroid_fragments_writer: EventWriter<EvSpawnAsteroidFragments>,
 ) {
     let mut iter = query.iter_combinations_mut();
 
     while let Some([
-        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1, asteroid_size_1),
-        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2, asteroid_size_2)
+        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1, asteroid_size_1, charge_level_1),
+        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2, asteroid_size_2, charge_level_2)
         ]) = iter.fetch_next()
     {
         let distance = shortest_distance(
@@ -735,27 +738,42 @@ fn collision_detection (
             }
             
             // Bullet vs Asteroid -> despawn both
-            if
-            collision_type_1.is_asteroid() && collision_type_2.is_bullet()
-            {
-                commands.entity(entity_1).despawn_recursive();
-                commands.entity(entity_2).despawn_recursive();
-                if let Some(asteroid_size_1) = asteroid_size_1 {
-                    spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *transform_1, velocity: *velocity_1, asteroid_size_destroyed: *asteroid_size_1});
-                }
-            }
-            if
+            else if
+            collision_type_1.is_asteroid() && collision_type_2.is_bullet() ||
             collision_type_1.is_bullet() && collision_type_2.is_asteroid()
             {
-                commands.entity(entity_1).despawn_recursive();
-                commands.entity(entity_2).despawn_recursive();
-                if let Some(asteroid_size_2) = asteroid_size_2 {
-                    spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *transform_2, velocity: *velocity_2, asteroid_size_destroyed: *asteroid_size_2});
+                let asteroid: Entity;
+                let asteroid_size: &AsteroidSize;
+                let asteroid_transform: &Transform;
+                let asteroid_velocity: Velocity;
+                let bullet: Entity;
+                let charge_level: &ChargeLevel;
+                if collision_type_1.is_asteroid() {
+                    asteroid = entity_1;
+                    asteroid_size = asteroid_size_1.unwrap();
+                    asteroid_transform = transform_1;
+                    asteroid_velocity = *velocity_1;
+                    bullet = entity_2;
+                    charge_level = charge_level_2.unwrap();
+                } else {
+                    asteroid = entity_2;
+                    asteroid_size = asteroid_size_2.unwrap();
+                    asteroid_transform = transform_2;
+                    asteroid_velocity = *velocity_2;
+                    bullet = entity_1;
+                    charge_level = charge_level_1.unwrap();
                 }
+                if asteroid_size.is_big() && charge_level.0 >= 2.0 ||
+                asteroid_size.is_medium() && charge_level.0 >= 1.0 ||
+                asteroid_size.is_small() {
+                    commands.entity(asteroid).despawn_recursive();
+                    spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *asteroid_transform, velocity: asteroid_velocity, asteroid_size_destroyed: *asteroid_size});
+                }
+                commands.entity(bullet).despawn_recursive();
             }
 
             // Asteroid vs Asteroid, Asteroid vs Shield -> Bounce
-            if
+            else if
             collision_type_1.is_asteroid() && collision_type_2.is_asteroid() ||
             collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
             collision_type_1.is_shield() && collision_type_2.is_asteroid()
