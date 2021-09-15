@@ -119,6 +119,7 @@ impl Default for Radius {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Mass(f32);
 impl Default for Mass {
     fn default() -> Self {
@@ -579,6 +580,7 @@ fn control(
                 y: velocity.y + angle.0.sin() * bullet_speed,
             })
             .insert(ChargeLevel(charge_level.0))
+            .insert(Mass(1.0 + charge_level.0))
             ;
             commands.entity(entity).insert(ChargeLevel::default());
         }
@@ -766,10 +768,20 @@ fn collision_detection (
                 if asteroid_size.is_big() && charge_level.0 >= 2.0 ||
                 asteroid_size.is_medium() && charge_level.0 >= 1.0 ||
                 asteroid_size.is_small() {
+                    commands.entity(bullet).despawn_recursive();
                     commands.entity(asteroid).despawn_recursive();
                     spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *asteroid_transform, velocity: asteroid_velocity, asteroid_size_destroyed: *asteroid_size});
+                } else {
+                    collision_bounce(
+                        transform_1.translation,
+                        &mut velocity_1,
+                        mass_1.0,
+                        transform_2.translation,
+                        &mut velocity_2,
+                        mass_2.0,
+                        &time,
+                    );
                 }
-                commands.entity(bullet).despawn_recursive();
             }
 
             // Asteroid vs Asteroid, Asteroid vs Shield -> Bounce
