@@ -33,12 +33,10 @@ struct Original;
 struct GridSprite;
 struct Player;
 struct Shield;
+struct Bullet;
+struct CameraWorld;
 
 // Events
-//struct EvRespawnPlayer;
-//struct EvDespawnRecursive{entity: Entity}
-//struct EvActivateShield{entity: Entity}
-//struct EvDeactivateShield{entity: Entity}
 struct EvSpawnAsteroidFragments{
     transform: Transform,
     velocity: Velocity,
@@ -51,6 +49,21 @@ struct EvCmpSpawnSprites;
 // With value
 struct Lifetime(instant::Duration);
 struct SpawnTime(instant::Instant);
+
+struct ScreenShake {
+    start_time: instant::Instant,
+    duration: instant::Duration,
+    amplitude: f32,
+}
+impl Default for ScreenShake {
+    fn default() -> Self {
+        Self {
+            start_time: instant::Instant::now(),
+            duration: instant::Duration::from_secs_f32(0.4),
+            amplitude: 4.0,
+        }
+    }
+}
 
 enum CollisionType {
     Ship,
@@ -83,15 +96,17 @@ impl SpriteType {
     fn is_ship(&self) -> bool {
         matches!(*self, SpriteType::Ship)
     }
-    fn is_asteroid_1(&self) -> bool {
-        matches!(*self, SpriteType::Asteroid1)
-    }
     fn is_shield(&self) -> bool {
         matches!(*self, SpriteType::Shield)
+    }
+/*
+    fn is_asteroid_1(&self) -> bool {
+        matches!(*self, SpriteType::Asteroid1)
     }
     fn is_bullet(&self) -> bool {
         matches!(*self, SpriteType::Bullet)
     }
+*/
 }
 
 #[derive(Clone, Copy)]
@@ -134,10 +149,22 @@ impl Default for Angle {
     }
 }
 
-struct Acceleration(f32);
-impl Default for Acceleration {
+struct ShipStats {
+    acceleration: f32,
+    turn_rate: f32,
+    charge_rate: f32,
+    bullet_speed: f32,
+    shield_regeneration: f32,
+}
+impl Default for ShipStats {
     fn default() -> Self {
-        Self(300.0)
+        Self {
+            acceleration: 300.0,
+            turn_rate: 4.0,
+            charge_rate: 3.0,
+            bullet_speed: 400.0,
+            shield_regeneration: 20.0,
+        }
     }
 }
 
@@ -201,7 +228,7 @@ struct ShipBundle {
     sprite_type: SpriteType,
     #[bundle]
     physics_object: PhysicsObjectBundle,
-    acceleration: Acceleration,
+    ship_stats: ShipStats,
     energy: Energy,
     charge_level: ChargeLevel,
 }
@@ -220,7 +247,7 @@ impl Default for ShipBundle {
                 radius: Radius(34.0),
                 ..Default::default()
             },
-            acceleration: Acceleration::default(),
+            ship_stats: ShipStats::default(),
             energy: Energy::default(),
             charge_level: ChargeLevel::default(),
         }
@@ -229,6 +256,7 @@ impl Default for ShipBundle {
 
 #[derive(Bundle)]
 struct BulletBundle {
+    bullet: Bullet,
     collision_type: CollisionType,
     sprite_type: SpriteType,
     #[bundle]
@@ -240,6 +268,7 @@ struct BulletBundle {
 impl Default for BulletBundle {
     fn default() -> Self {
         Self {
+            bullet: Bullet,
             collision_type: CollisionType::Bullet,
             sprite_type: SpriteType::Bullet,
             physics_object: PhysicsObjectBundle {
@@ -404,7 +433,9 @@ fn main() {
     .add_system(movement_translation)
     .add_system(movement_rotation)
     .add_system(edge_looping)
+    .add_system(bullet_direction_to_angle)
     .add_system(normalize_angle)
+    .add_system(screen_shake)
     ;
     
     app
@@ -422,7 +453,8 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn_bundle(OrthographicCameraBundle::new_2d())
+    .insert(CameraWorld);
 
     commands.insert_resource(Materials {
         ship: materials.add(asset_server.load(SHIP_SPRITE).into()),
@@ -436,7 +468,7 @@ fn setup(
 fn setup_resources(mut commands: Commands, materials: Res<Materials>) {
     commands.spawn_bundle(SpriteBundle {
         material: materials.background.clone(),
-        sprite: Sprite::new(Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT)),
+        sprite: Sprite::new(Vec2::new(WINDOW_WIDTH + 20.0, WINDOW_HEIGHT + 20.0)),
         transform: Transform {
             translation: Vec3::new(0., 0., 0.),
             ..Default::default()
@@ -489,12 +521,9 @@ fn spawn_player_and_asteroids (
 fn debug(
     mut commands: Commands,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(Entity, &Player)>,
 ) {
     if keyboard_input.just_pressed(KeyCode::F1) {
-        for (entity, _) in query.iter_mut() {
-            commands.entity(entity).despawn_recursive();
-        }
+        commands.spawn().insert(ScreenShake::default());
     }
 }
 
@@ -505,7 +534,7 @@ fn control(
     mut query: Query<(
         Entity,
         &mut Velocity,
-        &Acceleration,
+        &ShipStats,
         &mut Angle,
         &mut Transform,
         &Energy,
@@ -514,7 +543,7 @@ fn control(
     )>,
     mut query_shield: Query<(Entity, With<Shield>)>,
 ) {
-    if let Ok((entity, mut velocity, acceleration, mut angle, mut transform, energy, mut charge_level, _)) = query.single_mut() {
+    if let Ok((entity, mut velocity, ship_stats, mut angle, mut transform, energy, mut charge_level, _)) = query.single_mut() {
 
         // Activate Shield
         if keyboard_input.just_pressed(KeyCode::Z) && energy.0 > 20. {
@@ -536,18 +565,17 @@ fn control(
         }
 
         // Rotation
-        let rotation_speed: f32 = 4.;
         if keyboard_input.pressed(KeyCode::Left) {
-            angle.0 += rotation_speed * time.delta_seconds();
+            angle.0 += ship_stats.turn_rate * time.delta_seconds();
         }
         if keyboard_input.pressed(KeyCode::Right) {
-            angle.0 -= rotation_speed * time.delta_seconds();
+            angle.0 -= ship_stats.turn_rate * time.delta_seconds();
         }
 
         // Acceleration
         if keyboard_input.pressed(KeyCode::Up) {
-            velocity.x += acceleration.0 * angle.0.cos() * time.delta_seconds();
-            velocity.y += acceleration.0 * angle.0.sin() * time.delta_seconds();
+            velocity.x += ship_stats.acceleration * angle.0.cos() * time.delta_seconds();
+            velocity.y += ship_stats.acceleration * angle.0.sin() * time.delta_seconds();
         }
         if keyboard_input.pressed(KeyCode::R) {
             transform.translation.x = 0.0;
@@ -557,9 +585,8 @@ fn control(
         }
 
         // Fire
-        let bullet_speed: f32 = 400.0;
         if keyboard_input.pressed(KeyCode::X) {
-            charge_level.0 += 3.0 * time.delta_seconds();
+            charge_level.0 += ship_stats.charge_rate * time.delta_seconds();
             if charge_level.0 > 2.0 {charge_level.0 = 2.0;}
         }
         if keyboard_input.just_released(KeyCode::X) {
@@ -576,13 +603,13 @@ fn control(
             })
             .insert(Angle(angle.0))
             .insert(Velocity {
-                x: velocity.x + angle.0.cos() * bullet_speed,
-                y: velocity.y + angle.0.sin() * bullet_speed,
+                x: velocity.x + angle.0.cos() * ship_stats.bullet_speed,
+                y: velocity.y + angle.0.sin() * ship_stats.bullet_speed,
             })
             .insert(ChargeLevel(charge_level.0))
             .insert(Mass(1.0 + charge_level.0))
             ;
-            commands.entity(entity).insert(ChargeLevel::default());
+            charge_level.0 = ChargeLevel::default().0;
         }
     }
 }
@@ -773,6 +800,7 @@ fn collision_detection (
                     spawn_asteroid_fragments_writer.send(EvSpawnAsteroidFragments{transform: *asteroid_transform, velocity: asteroid_velocity, asteroid_size_destroyed: *asteroid_size});
                 } else {
                     collision_bounce(
+                        &mut commands,
                         transform_1.translation,
                         &mut velocity_1,
                         mass_1.0,
@@ -791,6 +819,7 @@ fn collision_detection (
             collision_type_1.is_shield() && collision_type_2.is_asteroid()
             {
                 collision_bounce(
+                    &mut commands,
                     transform_1.translation,
                     &mut velocity_1,
                     mass_1.0,
@@ -808,7 +837,7 @@ fn spawn_asteroid_fragments (
     mut commands: Commands,
     mut spawn_asteroid_fragment_reader: EventReader<EvSpawnAsteroidFragments>,
 ) {
-    let added_velocity = 40.0;
+    let added_velocity = 80.0;
     let retained_velocity_factor = 0.9;
     for event in spawn_asteroid_fragment_reader.iter() {
         let start_angle = rf32(0.0, 2.0 * PI / 3.0);
@@ -849,9 +878,9 @@ fn spawn_asteroid_fragments (
     }
 }
 
-fn gain_energy(time: Res<Time>, mut query: Query<&mut Energy>) {
-    if let Ok(mut energy) = query.single_mut() {
-        energy.0 += 20. * time.delta_seconds();
+fn gain_energy(time: Res<Time>, mut query: Query<(&ShipStats, &mut Energy)>) {
+    if let Ok((ship_stats, mut energy)) = query.single_mut() {
+        energy.0 += ship_stats.shield_regeneration * time.delta_seconds();
         if energy.0 >= 100. {
             energy.0 = 100.;
         }
@@ -920,6 +949,15 @@ fn edge_looping(
     }
 }
 
+fn bullet_direction_to_angle (
+    mut query: Query<(&mut Angle, &Velocity, With<Bullet>)>
+) {
+    for (mut angle, velocity, _) in query.iter_mut() {
+        angle.0 = (velocity.y / velocity.x).atan();
+        if velocity.x < 0.0 { angle.0 += PI}
+    }
+}
+
 fn normalize_angle(mut query: Query<&mut Angle>) {
     for mut angle in query.iter_mut() {
         if angle.0 > 2. * PI || angle.0 < -2. * PI {
@@ -927,6 +965,26 @@ fn normalize_angle(mut query: Query<&mut Angle>) {
         }
         if angle.0 < 0. {
             angle.0 += 2. * PI;
+        }
+    }
+}
+
+fn screen_shake (
+    mut commands: Commands,
+    query: Query<(Entity, &ScreenShake)>,
+    mut query_camera: Query<(&mut Transform, With<CameraWorld>)>,
+) {
+    for (mut transform, _) in query_camera.iter_mut() {
+        transform.translation.x = 0.0;
+        transform.translation.y = 0.0;
+        for (entity, screen_shake) in query.iter() {
+            if screen_shake.start_time.elapsed() > screen_shake.duration {
+                commands.entity(entity).despawn();
+            } else {
+                let current_amplitude: f32 = screen_shake.amplitude * (screen_shake.duration.as_secs_f32() - screen_shake.start_time.elapsed().as_secs_f32()) / screen_shake.duration.as_secs_f32();
+                transform.translation.x += rf32(-current_amplitude, current_amplitude);
+                transform.translation.y += rf32(-current_amplitude, current_amplitude);
+            }
         }
     }
 }
@@ -976,6 +1034,7 @@ fn shortest_distance (x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 
 // Returns the new X and Y velocities of entities after they bounce
 fn collision_bounce(
+    commands: &mut Commands,
     // Get position, velocity and mass of both entities
     t1: Vec3,
     v1: &mut Velocity,
@@ -1008,10 +1067,16 @@ fn collision_bounce(
         let mut t12 = ((t2.y-t1.y)/(t2.x-t1.x)).atan(); // Theta between the entities
         if t2.x < t1.x { t12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
 
+        let v1_start = v1.clone();
+
         // https://en.wikipedia.org/wiki/Elastic_collision - Two-dimensional collision with two moving objects
         v1.x = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.cos() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
         v1.y = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.sin() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
         v2.x = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.cos() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
         v2.y = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.sin() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+
+        let change_of_momentum: f32 = m1 * (v1_start.x - v1.x).hypot(v1_start.y - v1.y);
+
+        commands.spawn().insert(ScreenShake{amplitude: 0.0 + change_of_momentum / 4000.0, ..Default::default()});
     }
 }
