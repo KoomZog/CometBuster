@@ -4,7 +4,7 @@
 
 // Prints Rust error messages to the browser console
 extern crate console_error_panic_hook;
-use std::panic;
+use std::{fmt::Debug, panic};
 
 extern crate instant; // Works exactly like the std::time counterpart on native, but uses JS performance.now() for WASM
 
@@ -43,6 +43,10 @@ struct EvSpawnAsteroidFragments{
     asteroid_size_destroyed: AsteroidSize
 }
 
+struct EvSpawnBounceEffect{
+    transform: Transform,
+}
+
 // "Event" components
 struct EvCmpSpawnSprites;
 
@@ -59,7 +63,7 @@ impl Default for ScreenShake {
     fn default() -> Self {
         Self {
             start_time: instant::Instant::now(),
-            duration: instant::Duration::from_secs_f32(0.4),
+            duration: instant::Duration::from_secs_f32(0.3),
             amplitude: 4.0,
         }
     }
@@ -149,7 +153,27 @@ impl Default for Angle {
     }
 }
 
+struct Controls {
+    accelerate: KeyCode,
+    turn_left: KeyCode,
+    turn_right: KeyCode,
+    fire: KeyCode,
+    shield: KeyCode,
+}
+impl Default for Controls {
+    fn default() -> Self {
+        Self {
+            accelerate: KeyCode::Up,
+            turn_left: KeyCode::Left,
+            turn_right: KeyCode::Right,
+            fire: KeyCode::X,
+            shield: KeyCode::Z,
+        }
+    }
+}
+
 struct ShipStats {
+    controls: Controls,
     acceleration: f32,
     turn_rate: f32,
     charge_rate: f32,
@@ -159,6 +183,7 @@ struct ShipStats {
 impl Default for ShipStats {
     fn default() -> Self {
         Self {
+            controls: Controls::default(),
             acceleration: 300.0,
             turn_rate: 4.0,
             charge_rate: 3.0,
@@ -390,6 +415,14 @@ impl Default for ShieldBundle {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum AppState {
+    SetupMaterials,
+    SpawnStart,
+    InGame,
+    Paused,
+}
+
 fn main() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
@@ -415,41 +448,39 @@ fn main() {
     .add_plugins(DefaultPlugins);
 
     app
-    .add_startup_system(setup)
-    .add_startup_stage(
-        "setup_resources",
-        SystemStage::single(setup_resources),
-    )
-    .add_startup_system(spawn_player_and_asteroids)
-    .add_system(debug)
-    .add_system(despawn_after_lifetime)
-    .add_system(drain_energy)
-    .add_system(collision_detection)
-    .add_system(control)
-    .add_system(spawn_sprite_grid)
-    .add_system(respawn_player)
-    .add_system(spawn_asteroid_fragments)
-    .add_system(gain_energy)
-    .add_system(movement_translation)
-    .add_system(movement_rotation)
-    .add_system(edge_looping)
-    .add_system(bullet_direction_to_angle)
-    .add_system(normalize_angle)
-    .add_system(screen_shake)
+    .add_state(AppState::SetupMaterials)
+    .add_system_set(SystemSet::on_enter(AppState::SetupMaterials).with_system(setup_materials))
+    .add_system_set(SystemSet::on_enter(AppState::SpawnStart).with_system(spawn_background_player_asteroids))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(debug))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(despawn_after_lifetime))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(drain_energy))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(collision_detection))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(control))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(spawn_sprite_grid))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(respawn_player))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(spawn_asteroid_fragments))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(gain_energy))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(movement_translation))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(movement_rotation))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(edge_looping))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(bullet_direction_to_angle))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(normalize_angle))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(screen_shake))
+    .add_system_set(SystemSet::on_update(AppState::InGame).with_system(pause_unpause))
+    .add_system_set(SystemSet::on_update(AppState::Paused).with_system(pause_unpause))
     ;
-    
+
     app
-//    .add_event::<EvRespawnPlayer>()
     .add_event::<EvSpawnAsteroidFragments>()
+    .add_event::<EvSpawnBounceEffect>()
     ;
     
     app.run();
 }
 
-// -- STARTUP SYSTEMS --
-
-fn setup(
+fn setup_materials (
     mut commands: Commands,
+    mut state: ResMut<State<AppState>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
@@ -463,23 +494,21 @@ fn setup(
         asteroid_1: materials.add(asset_server.load(ASTEROID_1_SPRITE).into()),
         bullet: materials.add(asset_server.load(BULLET_SPRITE).into()),
     });
+
+    state.replace(AppState::SpawnStart).unwrap();
 }
 
-fn setup_resources(mut commands: Commands, materials: Res<Materials>) {
+fn spawn_background_player_asteroids (
+    mut commands: Commands,
+    mut state: ResMut<State<AppState>>,
+    materials: Res<Materials>
+){
     commands.spawn_bundle(SpriteBundle {
         material: materials.background.clone(),
         sprite: Sprite::new(Vec2::new(WINDOW_WIDTH + 20.0, WINDOW_HEIGHT + 20.0)),
-        transform: Transform {
-            translation: Vec3::new(0., 0., 0.),
-            ..Default::default()
-        },
         ..Default::default()
     });
-}
 
-fn spawn_player_and_asteroids (
-    mut commands: Commands,
-){
     let mut positions = Vec::<Vec2>::new();
     
     positions.push(Vec2::default());
@@ -514,9 +543,9 @@ fn spawn_player_and_asteroids (
         })
         ;
     }
-}
 
-// -- SYSTEMS --
+    state.replace(AppState::InGame).unwrap();
+}
 
 fn debug(
     mut commands: Commands,
@@ -524,6 +553,21 @@ fn debug(
 ) {
     if keyboard_input.just_pressed(KeyCode::F1) {
         commands.spawn().insert(ScreenShake::default());
+    }
+}
+
+fn pause_unpause (
+    mut state: ResMut<State<AppState>>,
+    mut keyboard_input: ResMut<Input<KeyCode>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        if matches!(state.current(), AppState::Paused) {
+            state.pop().unwrap();
+        }
+        if matches!(state.current(), AppState::InGame) {
+            state.push(AppState::Paused).unwrap();
+        }
+        keyboard_input.clear();
     }
 }
 
@@ -536,17 +580,17 @@ fn control(
         &mut Velocity,
         &ShipStats,
         &mut Angle,
-        &mut Transform,
+        &Transform,
         &Energy,
         &mut ChargeLevel,
         With<Player>,
     )>,
     mut query_shield: Query<(Entity, With<Shield>)>,
 ) {
-    if let Ok((entity, mut velocity, ship_stats, mut angle, mut transform, energy, mut charge_level, _)) = query.single_mut() {
+    for (entity, mut velocity, ship_stats, mut angle, transform, energy, mut charge_level, _) in query.iter_mut() {
 
         // Activate Shield
-        if keyboard_input.just_pressed(KeyCode::Z) && energy.0 > 20. {
+        if keyboard_input.just_pressed(ship_stats.controls.shield) && energy.0 > 20. {
             let shield_entity = commands
             .spawn_bundle(ShieldBundle {
                 ..Default::default()
@@ -559,44 +603,38 @@ fn control(
         // Deactivate Shield
         if keyboard_input.just_released(KeyCode::Z) {
             commands.entity(entity).insert(CollisionType::Ship);
-            if let Ok((shield_entity, _)) = query_shield.single_mut() {
+            for (shield_entity, _) in query_shield.iter_mut() {
                 commands.entity(shield_entity).despawn_recursive();
             }
         }
 
         // Rotation
-        if keyboard_input.pressed(KeyCode::Left) {
+        if keyboard_input.pressed(ship_stats.controls.turn_left) {
             angle.0 += ship_stats.turn_rate * time.delta_seconds();
         }
-        if keyboard_input.pressed(KeyCode::Right) {
+        if keyboard_input.pressed(ship_stats.controls.turn_right) {
             angle.0 -= ship_stats.turn_rate * time.delta_seconds();
         }
 
         // Acceleration
-        if keyboard_input.pressed(KeyCode::Up) {
+        if keyboard_input.pressed(ship_stats.controls.accelerate) {
             velocity.x += ship_stats.acceleration * angle.0.cos() * time.delta_seconds();
             velocity.y += ship_stats.acceleration * angle.0.sin() * time.delta_seconds();
         }
-        if keyboard_input.pressed(KeyCode::R) {
-            transform.translation.x = 0.0;
-            transform.translation.y = 0.0;
-            velocity.x = 0.0;
-            velocity.y = 0.0;
-        }
 
         // Fire
-        if keyboard_input.pressed(KeyCode::X) {
+        if keyboard_input.pressed(ship_stats.controls.fire) {
             charge_level.0 += ship_stats.charge_rate * time.delta_seconds();
             if charge_level.0 > 2.0 {charge_level.0 = 2.0;}
         }
-        if keyboard_input.just_released(KeyCode::X) {
+        if keyboard_input.just_released(ship_stats.controls.fire) {
             commands.spawn_bundle(BulletBundle {
                 ..Default::default()
             })
             .insert(Transform {
                 translation: Vec3::new(
-                    transform.translation.x + angle.0.cos() * 30.0,
-                    transform.translation.y + angle.0.sin() * 30.0,
+                    transform.translation.x + angle.0.cos() * 25.0,
+                    transform.translation.y + angle.0.sin() * 25.0,
                     10.0,
                 ),
                 ..Default::default()
@@ -702,8 +740,7 @@ fn respawn_player (
     query_free_space: Query<(&Transform, &With<CollisionType>)>,
     mut query_player: Query<With<Player>>,
 ){
-    if let Ok(_) = query_player.single_mut() {
-    } else {
+    if query_player.iter_mut().len() == 0 {
         let mut positions = Vec::<Vec2>::new();
         for (transform, _) in query_free_space.iter() {
             positions.push(Vec2::new(
@@ -741,14 +778,15 @@ fn despawn_after_lifetime(
 fn collision_detection (
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>, Option<&ChargeLevel>)>,
+    mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>, Option<&ChargeLevel>, Option<&SpawnTime>)>,
     mut spawn_asteroid_fragments_writer: EventWriter<EvSpawnAsteroidFragments>,
+    mut bounce_effect_writer: EventWriter<EvSpawnBounceEffect>,
 ) {
     let mut iter = query.iter_combinations_mut();
 
     while let Some([
-        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1, asteroid_size_1, charge_level_1),
-        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2, asteroid_size_2, charge_level_2)
+        (entity_1, radius_1, transform_1, mut velocity_1, mass_1, collision_type_1, asteroid_size_1, charge_level_1, spawn_time_1),
+        (entity_2, radius_2, transform_2, mut velocity_2, mass_2, collision_type_2, asteroid_size_2, charge_level_2, spawn_time_2)
         ]) = iter.fetch_next()
     {
         let distance = shortest_distance(
@@ -766,7 +804,7 @@ fn collision_detection (
                 commands.entity(entity_2).despawn_recursive();
             }
             
-            // Bullet vs Asteroid -> despawn both
+            // Bullet vs Asteroid -> despawn both or bounce
             else if
             collision_type_1.is_asteroid() && collision_type_2.is_bullet() ||
             collision_type_1.is_bullet() && collision_type_2.is_asteroid()
@@ -808,15 +846,18 @@ fn collision_detection (
                         &mut velocity_2,
                         mass_2.0,
                         &time,
+                        radius_1.0,
                     );
                 }
             }
 
-            // Asteroid vs Asteroid, Asteroid vs Shield -> Bounce
+            // Asteroid vs Asteroid, Asteroid vs Shield, Bullet vs Shield -> Bounce
             else if
             collision_type_1.is_asteroid() && collision_type_2.is_asteroid() ||
             collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
-            collision_type_1.is_shield() && collision_type_2.is_asteroid()
+            collision_type_1.is_shield() && collision_type_2.is_asteroid() ||
+            collision_type_1.is_bullet() && collision_type_2.is_shield() ||
+            collision_type_1.is_shield() && collision_type_2.is_bullet()
             {
                 collision_bounce(
                     &mut commands,
@@ -827,7 +868,42 @@ fn collision_detection (
                     &mut velocity_2,
                     mass_2.0,
                     &time,
+                    radius_1.0,
                 );
+            }
+
+            // Bullet vs Ship -> Despawn both or bounce
+            else if
+            collision_type_1.is_ship() && collision_type_2.is_bullet() ||
+            collision_type_1.is_bullet() && collision_type_2.is_ship()
+            {
+                let bullet_charge: &ChargeLevel;
+                let bullet_spawn_time: &SpawnTime;
+                if collision_type_1.is_bullet() {
+                    bullet_charge = charge_level_1.unwrap();
+                    bullet_spawn_time = spawn_time_1.unwrap();
+                } else {
+                    bullet_charge = charge_level_2.unwrap();
+                    bullet_spawn_time = spawn_time_2.unwrap();
+                }
+                if bullet_spawn_time.0.elapsed().as_secs_f32() > 0.2 {
+                    if bullet_charge.0 > 1.0 {
+                        commands.entity(entity_1).despawn_recursive();
+                        commands.entity(entity_2).despawn_recursive();
+                    } else {
+                        collision_bounce(
+                            &mut commands,
+                            transform_1.translation,
+                            &mut velocity_1,
+                            mass_1.0,
+                            transform_2.translation,
+                            &mut velocity_2,
+                            mass_2.0,
+                            &time,
+                            radius_1.0,
+                        );
+                    }
+                }
             }
         }
     }
@@ -879,7 +955,7 @@ fn spawn_asteroid_fragments (
 }
 
 fn gain_energy(time: Res<Time>, mut query: Query<(&ShipStats, &mut Energy)>) {
-    if let Ok((ship_stats, mut energy)) = query.single_mut() {
+    for (ship_stats, mut energy) in query.iter_mut() {
         energy.0 += ship_stats.shield_regeneration * time.delta_seconds();
         if energy.0 >= 100. {
             energy.0 = 100.;
@@ -890,17 +966,18 @@ fn gain_energy(time: Res<Time>, mut query: Query<(&ShipStats, &mut Energy)>) {
 fn drain_energy(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut Energy, &CollisionType)>,
+    mut query: Query<(Entity, &mut Energy, &CollisionType, &Children)>,
     mut query_shield: Query<(Entity, With<Shield>)>,
-//    mut shield_deactivated_writer: EventWriter<EvDeactivateShield>,
 ) {
-    if let Ok((entity, mut energy, collision_type)) = query.single_mut(){
+    for (entity, mut energy, collision_type, children) in query.iter_mut(){
         if collision_type.is_shield() {
             energy.0 -= 100. * time.delta_seconds();
             if energy.0 <= 0. {
                 commands.entity(entity).insert(CollisionType::Ship);
-                if let Ok((shield_entity, _)) = query_shield.single_mut() {
-                    commands.entity(shield_entity).despawn_recursive();
+                for child in children.into_iter() {
+                    if let Ok((shield_entity, _)) = query_shield.get_mut(*child) {
+                        commands.entity(shield_entity).despawn_recursive();
+                    }
                 }
             }
         }
@@ -1043,6 +1120,7 @@ fn collision_bounce(
     v2: &mut Velocity,
     m2: f32,
     time: &Res<Time>,
+    r1: f32,
 ) {
     // Check if the entities are moving towards each other
     if shortest_distance(
@@ -1064,19 +1142,35 @@ fn collision_bounce(
         if v2.x < 0.0 { th2 += PI; } // .atan() can only calculate an angle, not which direction along that angle
         let vt1 = v1.x.hypot(v1.y).abs(); // Velocity Total, ent 1
         let vt2 = v2.x.hypot(v2.y).abs(); // Velocity Total, ent 2
-        let mut t12 = ((t2.y-t1.y)/(t2.x-t1.x)).atan(); // Theta between the entities
-        if t2.x < t1.x { t12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
+        let mut th12 = ((t2.y-t1.y)/(t2.x-t1.x)).atan(); // Theta between the entities
+        if t2.x < t1.x { th12 += PI; } // .atan() can only calculate an angle, not which direction along that angle
 
         let v1_start = v1.clone();
 
+        let loss_factor: f32 = 0.95;
         // https://en.wikipedia.org/wiki/Elastic_collision - Two-dimensional collision with two moving objects
-        v1.x = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.cos() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
-        v1.y = (vt1 * (th1-t12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - t12 ).cos() ) / ( m1 + m2 ) * t12.sin() + vt1 * ( th1 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
-        v2.x = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.cos() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).cos();
-        v2.y = (vt2 * (th2-t12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - t12 ).cos() ) / ( m2 + m1 ) * t12.sin() + vt2 * ( th2 - t12 ).sin() * ( t12 + PI / 2.0 ).sin();
+        v1.x = loss_factor * (vt1 * (th1-th12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - th12 ).cos() ) / ( m1 + m2 ) * th12.cos() + vt1 * ( th1 - th12 ).sin() * ( th12 + PI / 2.0 ).cos();
+        v1.y = loss_factor * (vt1 * (th1-th12).cos() * ( m1 - m2 ) + 2.0 * m2 * vt2 * ( th2 - th12 ).cos() ) / ( m1 + m2 ) * th12.sin() + vt1 * ( th1 - th12 ).sin() * ( th12 + PI / 2.0 ).sin();
+        v2.x = loss_factor * (vt2 * (th2-th12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - th12 ).cos() ) / ( m2 + m1 ) * th12.cos() + vt2 * ( th2 - th12 ).sin() * ( th12 + PI / 2.0 ).cos();
+        v2.y = loss_factor * (vt2 * (th2-th12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - th12 ).cos() ) / ( m2 + m1 ) * th12.sin() + vt2 * ( th2 - th12 ).sin() * ( th12 + PI / 2.0 ).sin();
 
         let change_of_momentum: f32 = m1 * (v1_start.x - v1.x).hypot(v1_start.y - v1.y);
+        commands.spawn().insert(ScreenShake{amplitude: (0.0 + change_of_momentum / 5000.0).min(10.0), ..Default::default()});
 
-        commands.spawn().insert(ScreenShake{amplitude: 0.0 + change_of_momentum / 4000.0, ..Default::default()});
+        let contact_point: Vec2 = Vec2::new(t1.x + th12.cos() * r1, t1.y + th12.sin() * r1);
+        commands.spawn_bundle(SpriteBundle {
+            sprite: Sprite::new(Vec2::new( 5.0, 5.0)),
+            transform: Transform {
+                translation: Vec3::new(
+                    contact_point.x,
+                    contact_point.y,
+                    100.0,
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .insert(SpawnTime(instant::Instant::now()))
+        .insert(Lifetime(instant::Duration::from_secs_f32(1.0)));
     }
 }
