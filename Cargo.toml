@@ -2,42 +2,36 @@
 name = "cometbuster"
 version = "0.1.0"
 authors = ["Alexander Widell"]
-edition = "2018"
+edition = "2021"
 repository = "https://github.com/koomzog/cometbuster"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[features]
-default = [
-  "bevy/bevy_gltf",
-  "bevy/bevy_winit",
-  "bevy/render",
-  "bevy/png",
-]
-
-native = [
-  "bevy/bevy_wgpu"
-]
-
-web = [
-  "bevy_webgl2"
-]
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", default-features=false}
-# Try different bevy_webgl2 versions to get it to compile for web.
-# bevy_webgl2 = {version = "0.5.2", optional=true}
-# bevy_webgl2 = {git = "https://github.com/billyb2/bevy_webgl2", optional=true}
-bevy_webgl2 = {git = "https://github.com/mrk-its/bevy_webgl2", optional=true}
-console_error_panic_hook = "0.1.6"
+bevy = "0.6.0"
 instant = "0.1.1"
-
-winit = {version = "0.24.0"}
 rand = "0.8.4"
-getrandom = {version="0.1", features=["wasm-bindgen"]}
 
-[profile.dev]
-opt-level = 1
+# ------------
 
-[profile.release]
-# lto = true
-# opt-level = 's'
+# FAST compile
+# If you are using rust stable, remove the "-Zshare-generics=y" below.
+
+#[target.x86_64-unknown-linux-gnu]
+#linker = "/usr/bin/clang"
+#rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zshare-generics=y"]
+
+# NOTE: you must manually install https://github.com/michaeleisel/zld on mac. you can easily do this with the "brew" package manager:
+# `brew install michaeleisel/zld/zld`
+#[target.x86_64-apple-darwin]
+#rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld", "-Zshare-generics=y"]
+
+#[target.aarch64-apple-darwin]
+#rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld", "-Zshare-generics=y"]
+
+#[target.x86_64-pc-windows-msvc]
+#linker = "rust-lld.exe"
+#rustflags = ["-Zshare-generics=n"]
+
+# Optional: Uncommenting the following improves compile times, but reduces the amount of debug info to 'line number tables only'
+# In most cases the gains are negligible, but if you are on macos and have slow compile times you should see significant gains.
+#[profile.dev]
+#debug = 1
