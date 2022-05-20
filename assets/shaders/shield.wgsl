@@ -1,5 +1,9 @@
-// TODO
-// Improve fullness animation and make it take a float from Bevy
+struct FragmentInput {
+    [[builtin(position)]] clip_position: vec4<f32>;
+    [[location(0)]] world_position: vec4<f32>;
+    [[location(1)]] world_normal: vec3<f32>;
+    [[location(2)]] uv: vec2<f32>;
+};
 
 struct Time { value: f32;};
 struct ShieldColor { value: i32;};
@@ -8,10 +12,6 @@ struct TimeSinceDeactivation { value: f32;};
 struct DeactivationFlash { value: i32;};
 struct TimeSinceCollision { value: f32;};
 struct CollisionAngle { value: f32;};
-
-struct FragmentInput {
-    [[location(0)]] pos: vec2<f32>;
-};
 
 [[group(1), binding(0)]] var<uniform> in_time: Time;
 [[group(1), binding(1)]] var<uniform> in_color: ShieldColor;
@@ -75,10 +75,9 @@ fn hex_base(hex_line_thickness: f32, uv: vec2<f32>, scale_x: f32, scale_y: f32) 
 }
 
 [[stage(fragment)]]
-fn fragment(in_uv: FragmentInput) -> [[location(0)]] vec4<f32> {
+fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
     // Basics
-    let quad_size = vec2<f32>(100.0);
-    var uv = (in_uv.pos / quad_size);
+    var uv = fragment_input.uv - 0.5;
     let pi = 3.14159265358979;
     let tau = 2.0 * pi;
 

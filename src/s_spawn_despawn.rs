@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    sprite::MaterialMesh2dBundle,
+};
 use crate::consts::*;
 use crate::helpers::*;
 use crate::c_appstate::AppState;
@@ -9,6 +12,8 @@ use crate::c_tags::{GridSprite, Player};
 use crate::c_movement_and_collisions::{CollisionType, Velocity};
 use crate::c_bundles::{AsteroidBigBundle, AsteroidMediumBundle, AsteroidSmallBundle, ShipBundle};
 use crate::c_lifetime_spawntime::{Lifetime, SpawnTime};
+use crate::material_shield::MaterialShield;
+use crate::material_basic::MaterialBasic;
 
 pub struct SpawnDespawnPlugin;
 
@@ -120,6 +125,159 @@ fn respawn_player (
 
 fn spawn_sprite_grid (
     mut commands: Commands,
+    mut res_meshes: ResMut<Assets<Mesh>>,
+    mut res_material_shield: ResMut<Assets<MaterialShield>>,
+    mut res_material_basic: ResMut<Assets<MaterialBasic>>,
+    mut query: Query<(Entity, &SpriteType, With<EvCmpSpawnSprites>, Option<&AsteroidSize>, Option<&ChargeLevel>)>,
+    textures: ResMut<Textures>,
+){
+    for (entity, sprite_type, _ev_cmp_spawn_sprites, asteroid_size, charge_level) in query.iter_mut() {
+        commands.entity(entity)
+        .remove::<EvCmpSpawnSprites>();
+
+        // -- Z LAYERS --
+        // 30 Shield
+        // 20 Ship
+        // 10 Asteroids, bullets
+        // 00 Background
+
+        let sprite_grid: Vec<Entity> = vec![
+            (-1.0 as f32, -1.0 as f32),
+            (0.0 as f32, -1.0 as f32),
+            (1.0 as f32, -1.0 as f32),
+            (-1.0 as f32, 0.0 as f32),
+            (0.0 as f32, 0.0 as f32),
+            (1.0 as f32, 0.0 as f32),
+            (-1.0 as f32, 1.0 as f32),
+            (0.0 as f32, 1.0 as f32),
+            (1.0 as f32, 1.0 as f32),
+            ].into_iter().map(
+            |(x_factor, y_factor)|
+
+                if sprite_type.is_ship() {
+                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(60.0, 60.0), flip: false })).into(),
+                        material: res_material_basic.add(MaterialBasic {
+                            texture: textures.ship.clone_weak(),
+                            ..Default::default()
+                        }),
+                        transform: Transform {
+                            translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .insert(GridSprite)
+                    .id()
+                }
+                else if let Some(asteroid_size) = asteroid_size {
+                    if asteroid_size.is_big() {
+                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                            mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(180.0, 180.0), flip: false })).into(),
+                            material: res_material_basic.add(MaterialBasic {
+                                texture: textures.asteroid_1.clone_weak(),
+                                ..Default::default()
+                            }),
+                            transform: Transform {
+                                translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .insert(GridSprite)
+                        .id()
+                    }
+                    else if asteroid_size.is_medium() {
+                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                            mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(80.0, 80.0), flip: false })).into(),
+                            material: res_material_basic.add(MaterialBasic {
+                                texture: textures.asteroid_1.clone_weak(),
+                                ..Default::default()
+                            }),
+                            transform: Transform {
+                                translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .insert(GridSprite)
+                        .id()
+                    }
+                    else {
+                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                            mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(36.0, 36.0), flip: false })).into(),
+                            material: res_material_basic.add(MaterialBasic {
+                                texture: textures.asteroid_1.clone_weak(),
+                                ..Default::default()
+                            }),
+                            transform: Transform {
+                                translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .insert(GridSprite)
+                        .id()
+                    }
+                }
+                else if sprite_type.is_shield() {
+                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(72.0, 72.0), flip: false })).into(),
+                        material: res_material_shield.add(MaterialShield {
+                            texture_gradient: textures.color_gradients.clone_weak(),
+                            ..Default::default()
+                        }),
+                        transform: Transform {
+                            translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 30.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .insert(GridSprite)
+                    .id()
+                }
+                else if let Some(charge_level) = charge_level {
+                    let quad_size = 30.0 * (1.0 + 1.8 * (charge_level.0 / 1.0).floor());
+                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(quad_size, quad_size), flip: false })).into(),
+                        material: res_material_basic.add(MaterialBasic {
+                            texture: textures.bullet.clone_weak(),
+                            ..Default::default()
+                        }),
+                        transform: Transform {
+                            translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 10.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .insert(GridSprite)
+                    .id()
+                }
+                else { // Always initialize values. TODO: Make this sprite something obvious for debugging
+                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(60.0, 60.0), flip: false })).into(),
+                        material: res_material_basic.add(MaterialBasic {
+                            texture: textures.ship.clone_weak(),
+                            ..Default::default()
+                        }),
+                        transform: Transform {
+                            translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .insert(GridSprite)
+                    .id()
+                }
+            ).collect();
+
+        commands.entity(entity).push_children(&sprite_grid);
+    }
+}
+
+/*
+fn spawn_sprite_grid (
+    mut commands: Commands,
     mut query: Query<(Entity, &SpriteType, With<EvCmpSpawnSprites>, Option<&AsteroidSize>, Option<&ChargeLevel>)>,
     textures: Res<Textures>,
 ){
@@ -133,42 +291,42 @@ fn spawn_sprite_grid (
         // 10 Asteroids, bullets
         // 00 Background
 
-        let sprite_size: f32;
+        let quad_size: f32;
         let texture: Handle<Image>;
         let z_position: f32;
         if sprite_type.is_ship() {
             texture = textures.ship.clone_weak();
-            sprite_size = 60.0;
+            quad_size = 60.0;
             z_position = 20.0;
         }
         else if let Some(asteroid_size) = asteroid_size {
             texture = textures.asteroid_1.clone_weak();
             if asteroid_size.is_big() {
-                sprite_size = 180.0;
+                quad_size = 180.0;
                 z_position = 10.0;
             }
             else if asteroid_size.is_medium() {
-                sprite_size = 80.0;
+                quad_size = 80.0;
                 z_position = 10.0;
             }
             else {
-                sprite_size = 36.0;
+                quad_size = 36.0;
                 z_position = 10.0;
             }
         }
         else if sprite_type.is_shield() {
             texture = textures.shield.clone_weak();
-            sprite_size = 72.0;
+            quad_size = 72.0;
             z_position = 30.0;
         }
         else if let Some(charge_level) = charge_level {
             texture = textures.bullet.clone_weak();
-            sprite_size = 30.0 * (1.0 + 1.8 * (charge_level.0 / 1.0).floor());
+            quad_size = 30.0 * (1.0 + 1.8 * (charge_level.0 / 1.0).floor());
             z_position = 10.0;
         }
         else { // Always initialize values. TODO: Make this sprite something obvious for debugging
             texture = textures.ship.clone_weak();
-            sprite_size = 200.0;
+            quad_size = 200.0;
             z_position = 1000.0;
         }
 
@@ -187,7 +345,7 @@ fn spawn_sprite_grid (
             commands.spawn_bundle(SpriteBundle {
                 texture: texture.clone(),
                 sprite: Sprite{
-                    custom_size: Some(Vec2::new(sprite_size, sprite_size)),
+                    custom_size: Some(Vec2::new(quad_size, quad_size)),
                     color: Color::rgb(1.0, 1.0, 1.0),
                     flip_x: false,
                     flip_y: false
@@ -205,6 +363,7 @@ fn spawn_sprite_grid (
         commands.entity(entity).push_children(&sprite_grid);
     }
 }
+*/
 
 fn spawn_asteroid_fragments (
     mut commands: Commands,

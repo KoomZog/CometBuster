@@ -28,6 +28,7 @@ fn setup_world (
         bullet: asset_server.load(BULLET_SPRITE),
         asteroid_1: asset_server.load(ASTEROID_1_SPRITE),
         background: asset_server.load(BACKGROUND_SPRITE),
+        color_gradients: asset_server.load(TEXTURE_SPRITE),
     });
 
     state.replace(AppState::SpawnStart).unwrap();

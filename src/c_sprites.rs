@@ -6,6 +6,7 @@ pub struct Textures{
     pub bullet: Handle<Image>,
     pub asteroid_1: Handle<Image>,
     pub background: Handle<Image>,
+    pub color_gradients: Handle<Image>,
 }
 
 #[derive(Component)]

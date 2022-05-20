@@ -35,6 +35,8 @@ mod c_appstate;
 
 mod material_shield;
 use material_shield::*;
+mod material_basic;
+use material_basic::*;
 
 mod s_energy;
 use s_energy::EnergyPlugin;
@@ -83,6 +85,7 @@ fn main() {
     .add_plugin(PausePlugin)
     .add_plugin(SetupWorldPlugin)
     .add_plugin(MaterialShieldPlugin)
+    .add_plugin(MaterialBasicPlugin)
     ;
 
     app
