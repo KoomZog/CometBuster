@@ -10,4 +10,10 @@ pub struct EvSpawnAsteroidFragments{
 }
 
 #[derive(Component)]
+pub struct EvShieldCollision{
+    pub shield_position: Vec2,
+    pub other_position: Vec2,
+}
+
+#[derive(Component)]
 pub struct EvCmpSpawnSprites;

@@ -32,6 +32,22 @@ pub fn random_free_position(
     return Vec2::new(x_pos, y_pos);
 }
 
+// Returns the closest position of entity 2 from entity 1, taking edge looping into account
+pub fn closest_position (x1: f32, y1: f32, x2: f32, y2: f32) -> Vec2 {
+    let new_x2: f32;
+    let new_y2: f32;
+
+    if (x2 + WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { new_x2 = x2 + WINDOW_WIDTH; }
+    else if (x2 - WINDOW_WIDTH - x1).abs() < (x2 - x1).abs() { new_x2 = x2 - WINDOW_WIDTH; }
+    else { new_x2 = x2; }
+
+    if (y2 + WINDOW_WIDTH - y1).abs() < (y2 - y1).abs() { new_y2 = y2 + WINDOW_WIDTH; }
+    else if (y2 - WINDOW_WIDTH - y1).abs() < (y2 - y1).abs() { new_y2 = y2 - WINDOW_WIDTH; }
+    else { new_y2 = y2; }
+
+    return Vec2::new(new_x2, new_y2);
+}
+
 // Returns the shortest distance between entities, taking edge looping into account
 pub fn shortest_distance (x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     let x_dist_1 = (x1 - x2).abs();

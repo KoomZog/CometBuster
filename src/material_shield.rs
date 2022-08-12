@@ -14,6 +14,9 @@ use bevy::{
 };
 
 use crate::c_appstate::AppState;
+use crate::helpers::*;
+use crate::consts::*;
+use crate::c_events::EvShieldCollision;
 
 pub struct MaterialShieldPlugin;
 
@@ -21,6 +24,7 @@ impl Plugin for MaterialShieldPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(Material2dPlugin::<MaterialShield>::default())
         .add_system_set(SystemSet::on_update(AppState::InGame).with_system(update_material_shield_time))
+        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(shield_collision))
         ;
     }
 }
@@ -29,10 +33,34 @@ fn update_material_shield_time(
     mut res_shader_time: ResMut<Assets<MaterialShield>>,
     res_time: Res<Time>,
 ) {
-    for (_, time) in res_shader_time.iter_mut(){
-        time.time = res_time.seconds_since_startup() as f32;
+    for (_, shield) in res_shader_time.iter_mut(){
+        shield.time = res_time.seconds_since_startup() as f32;
+        shield.time_since_activation += res_time.delta_seconds() as f32;
+//        shield.time_since_deactivation += res_time.delta_seconds() as f32;
+        shield.time_since_collision += res_time.delta_seconds() as f32;
     }
 }
+
+fn shield_collision (
+    mut shield_collision_reader: EventReader<EvShieldCollision>,
+    mut res_shield: ResMut<Assets<MaterialShield>>,
+) {
+    for event in shield_collision_reader.iter() {
+        let shield_position = event.shield_position;
+        let other_position = event.other_position;
+        let other_closest_position = closest_position(shield_position.x, shield_position.y, other_position.x, other_position.y);
+        let delta = Vec2::new(other_closest_position.x - shield_position.x, other_closest_position.y - shield_position.y);
+
+        let mut collision_angle = (delta.y / delta.x).atan(); // Angle of collision
+        if delta.x < 0.0 { collision_angle += PI; } // .atan() can only calculate an angle, not which direction along that angle
+
+        for (_, shield) in res_shield.iter_mut(){
+            shield.time_since_collision = 0.0 as f32;
+            shield.collision_angle = collision_angle;
+        }
+    }
+}
+
 
 #[derive(Component, Debug, Clone, TypeUuid)]
 #[uuid = "4ee9c363-1124-4113-890e-199d81b00281"]
@@ -52,9 +80,9 @@ impl Default for MaterialShield {
         Self {
             time: 0.0,
             color: 0, // Blue, Green, Orange, Purple
-            time_since_activation: 10.0,
+            time_since_activation: 0.0,
             time_since_deactivation: 0.0,
-            time_since_collision: 0.0,
+            time_since_collision: 100.0,
             collision_angle: 0.0,
             ring_deactivation_flash: 0,
             texture_gradient: Handle::default(),

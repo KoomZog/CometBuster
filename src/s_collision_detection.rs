@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use crate::helpers::*;
 use crate::c_appstate::AppState;
 use crate::c_chargelevel::ChargeLevel;
-use crate::c_events::EvSpawnAsteroidFragments;
+use crate::c_events::{EvSpawnAsteroidFragments, EvShieldCollision};
 use crate::c_lifetime_spawntime::SpawnTime;
 use crate::c_movement_and_collisions::{CollisionType, Mass, Radius, Velocity};
 use crate::c_sprites::AsteroidSize;
@@ -22,6 +22,7 @@ fn collision_detection (
     time: Res<Time>,
     mut query: Query<(Entity, &Radius, &Transform, &mut Velocity, &Mass, &CollisionType, Option<&AsteroidSize>, Option<&ChargeLevel>, Option<&SpawnTime>)>,
     mut spawn_asteroid_fragments_writer: EventWriter<EvSpawnAsteroidFragments>,
+    mut shield_collision_writer: EventWriter<EvShieldCollision>,
 //    mut bounce_effect_writer: EventWriter<EvSpawnBounceEffect>,
 ) {
     let mut iter = query.iter_combinations_mut();
@@ -93,13 +94,9 @@ fn collision_detection (
                 }
             }
 
-            // Asteroid vs Asteroid, Asteroid vs Shield, Bullet vs Shield -> Bounce
+            // Asteroid vs Asteroid -> Bounce
             else if
-            collision_type_1.is_asteroid() && collision_type_2.is_asteroid() ||
-            collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
-            collision_type_1.is_shield() && collision_type_2.is_asteroid() ||
-            collision_type_1.is_bullet() && collision_type_2.is_shield() ||
-            collision_type_1.is_shield() && collision_type_2.is_bullet()
+            collision_type_1.is_asteroid() && collision_type_2.is_asteroid()
             {
                 collision_bounce(
                     &mut commands,
@@ -112,6 +109,40 @@ fn collision_detection (
                     &time,
                     radius_1.0,
                 );
+            }
+
+            // Shield vs anything -> Bounce
+            else if
+            collision_type_1.is_shield() && collision_type_2.is_asteroid() ||
+            collision_type_1.is_asteroid() && collision_type_2.is_shield() ||
+            collision_type_1.is_shield() && collision_type_2.is_bullet() ||
+            collision_type_1.is_bullet() && collision_type_2.is_shield()
+            {
+                collision_bounce(
+                    &mut commands,
+                    transform_1.translation,
+                    &mut velocity_1,
+                    mass_1.0,
+                    transform_2.translation,
+                    &mut velocity_2,
+                    mass_2.0,
+                    &time,
+                    radius_1.0,
+                );
+
+                let shield_transform: &Transform;
+                let other_transform: &Transform;
+                if collision_type_1.is_shield() {
+                    shield_transform = transform_1;
+                    other_transform = transform_2;
+                } else {
+                    shield_transform = transform_2;
+                    other_transform = transform_1;
+                }
+                shield_collision_writer.send(EvShieldCollision{
+                    shield_position: Vec2::new(shield_transform.translation.x, shield_transform.translation.y),
+                    other_position: Vec2::new(other_transform.translation.x, other_transform.translation.y)
+                });
             }
 
             // Bullet vs Ship -> Despawn both or bounce

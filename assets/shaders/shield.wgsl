@@ -87,7 +87,7 @@ fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
     let time_since_deactivation = in_time_since_deactivation.value;
     let ring_deactivation_flash = in_deactivation_flash.value;
     let time_since_collision = in_time_since_collision.value;
-    let collision_angle = in_collision_angle.value;
+    let collision_angle = in_collision_angle.value + 0.5 * pi;
 
     // -- SETTINGS --
     // General settings

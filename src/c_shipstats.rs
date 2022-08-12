@@ -18,7 +18,7 @@ impl Default for ShipStats {
             turn_rate: 4.0,
             charge_rate: 3.0,
             bullet_speed: 400.0,
-            shield_regeneration: 20.0,
+            shield_regeneration: 2000.0,
         }
     }
 }

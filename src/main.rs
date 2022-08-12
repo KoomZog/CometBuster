@@ -1,7 +1,7 @@
 // TO DO - Rough order
 // *Shield shader
 // *Code organization - plugins
-// Shield shader to game
+// *Shield shader to game
 // Particle effects
 // Audio
 // GUI
@@ -95,6 +95,7 @@ fn main() {
     app
     .add_event::<EvSpawnAsteroidFragments>()
     .add_event::<EvSpawnBounceEffect>()
+    .add_event::<EvShieldCollision>()
     ;
 
     app.run();
