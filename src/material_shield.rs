@@ -1,16 +1,10 @@
 use bevy::{
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
     reflect::TypeUuid,
     render::{
-        render_asset::{PrepareAssetError, RenderAsset, RenderAssets},
-        render_resource::{
-            std140::{AsStd140, Std140},
-            *,
-        },
-        renderer::RenderDevice,
+        render_resource::*,
     },
-    sprite::{Material2dPipeline, Material2dPlugin, Material2d},
+    sprite::{Material2d, Material2dPlugin},
 };
 
 use crate::c_appstate::AppState;
@@ -23,21 +17,50 @@ pub struct MaterialShieldPlugin;
 impl Plugin for MaterialShieldPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(Material2dPlugin::<MaterialShield>::default())
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(update_material_shield_time))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(shield_collision))
+        .add_system(shield_collision.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }
 
-fn update_material_shield_time(
-    mut res_shader_time: ResMut<Assets<MaterialShield>>,
-    res_time: Res<Time>,
-) {
-    for (_, shield) in res_shader_time.iter_mut(){
-        shield.time = res_time.seconds_since_startup() as f32;
-        shield.time_since_activation += res_time.delta_seconds() as f32;
-//        shield.time_since_deactivation += res_time.delta_seconds() as f32;
-        shield.time_since_collision += res_time.delta_seconds() as f32;
+
+impl Material2d for MaterialShield {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/shield.wgsl".into()
+    }
+}
+
+// This is the struct that will be passed to your shader
+#[derive(AsBindGroup, TypeUuid, Debug, Clone)]
+#[uuid = "4ee9c363-1124-4113-890e-199d81b00281"]
+pub struct MaterialShield {
+    #[uniform(0)]
+    pub color: i32, // Blue, Green, Orange, Purple
+    #[uniform(1)]
+    pub time_since_activation: f32,
+    #[uniform(2)]
+    pub time_since_deactivation: f32,
+    #[uniform(3)]
+    pub time_since_collision: f32,
+    #[uniform(4)]
+    pub collision_angle: f32,
+    #[uniform(5)]
+    pub ring_deactivation_flash: i32,
+    #[texture(6)]
+    #[sampler(7)]
+    pub texture_gradient: Option<Handle<Image>>,
+}
+
+impl Default for MaterialShield {
+    fn default() -> Self {
+        Self {
+            color: 0, // Blue, Green, Orange, Purple
+            time_since_activation: 0.0,
+            time_since_deactivation: 0.0,
+            time_since_collision: 100.0,
+            collision_angle: 0.0,
+            ring_deactivation_flash: 0,
+            texture_gradient: Option::default(),
+        }
     }
 }
 
@@ -62,7 +85,25 @@ fn shield_collision (
 }
 
 
-#[derive(Component, Debug, Clone, TypeUuid)]
+
+
+/*
+
+fn update_material_shield_time(
+    mut res_shader_time: ResMut<Assets<MaterialShield>>,
+    res_time: Res<Time>,
+) {
+    for (_, shield) in res_shader_time.iter_mut(){
+        shield.time = res_time.seconds_since_startup() as f32;
+        shield.time_since_activation += res_time.delta_seconds() as f32;
+//        shield.time_since_deactivation += res_time.delta_seconds() as f32;
+        shield.time_since_collision += res_time.delta_seconds() as f32;
+    }
+}
+
+
+
+#[derive(Component, Debug, Clone, TypeUuid, AsBindGroup)]
 #[uuid = "4ee9c363-1124-4113-890e-199d81b00281"]
 pub struct MaterialShield {
     pub time: f32,
@@ -334,3 +375,5 @@ impl Material2d for MaterialShield {
         })
     }
 }
+
+*/

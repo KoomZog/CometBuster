@@ -12,7 +12,7 @@ pub struct CollisionDetectionPlugin;
 impl Plugin for CollisionDetectionPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(collision_detection))
+        .add_system(collision_detection.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }

@@ -11,7 +11,7 @@ pub struct ControlPlugin;
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(control))
+        .add_system(control.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }
@@ -37,7 +37,7 @@ fn control(
         // Activate Shield
         if keyboard_input.just_pressed(ship_stats.controls.shield) && energy.0 > 20. {
             let shield_entity = commands
-            .spawn_bundle(ShieldBundle {
+            .spawn(ShieldBundle {
                 ..Default::default()
             })
             .id();
@@ -73,7 +73,7 @@ fn control(
             if charge_level.0 > 2.0 {charge_level.0 = 2.0;}
         }
         if keyboard_input.just_released(ship_stats.controls.fire) {
-            commands.spawn_bundle(BulletBundle {
+            commands.spawn(BulletBundle {
                 ..Default::default()
             })
             .insert(Transform {

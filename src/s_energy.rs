@@ -9,8 +9,8 @@ pub struct EnergyPlugin;
 impl Plugin for EnergyPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(drain_energy))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(gain_energy))
+        .add_system(gain_energy.in_set(OnUpdate(AppState::InGame)))
+        .add_system(drain_energy.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }

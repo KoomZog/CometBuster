@@ -20,11 +20,11 @@ pub struct SpawnDespawnPlugin;
 impl Plugin for SpawnDespawnPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(despawn_after_lifetime))
-        .add_system_set(SystemSet::on_enter(AppState::SpawnStart).with_system(spawn_background_player_asteroids))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(respawn_player))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(spawn_sprite_grid))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(spawn_asteroid_fragments))
+        .add_system(despawn_after_lifetime.in_set(OnUpdate(AppState::InGame)))
+        .add_system(spawn_background_player_asteroids.in_set(OnUpdate(AppState::SpawnStart)))
+        .add_system(respawn_player.in_set(OnUpdate(AppState::InGame)))
+        .add_system(spawn_sprite_grid.in_set(OnUpdate(AppState::InGame)))
+        .add_system(spawn_asteroid_fragments.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }
@@ -42,16 +42,17 @@ fn despawn_after_lifetime(
 
 fn spawn_background_player_asteroids (
     mut commands: Commands,
-    mut state: ResMut<State<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
     textures: Res<Textures>,
 ){
-    commands.spawn_bundle(SpriteBundle {
+    commands.spawn(SpriteBundle {
         texture: textures.background.clone_weak(),
         sprite: Sprite{
             flip_x: false,
             flip_y: false,
             color: Color::rgb(1.0, 1.0, 1.0),
-            custom_size: Some(Vec2::new(WINDOW_WIDTH + 10.0, WINDOW_HEIGHT + 10.0))
+            custom_size: Some(Vec2::new(WINDOW_WIDTH + 10.0, WINDOW_HEIGHT + 10.0)),
+            ..Default::default()
         },
         ..Default::default()
     });
@@ -59,7 +60,7 @@ fn spawn_background_player_asteroids (
     let mut positions = Vec::<Vec2>::new();
     
     positions.push(Vec2::default());
-    commands.spawn_bundle(ShipBundle {
+    commands.spawn(ShipBundle {
         ..Default::default()
     })
     .insert(Transform {
@@ -73,7 +74,7 @@ fn spawn_background_player_asteroids (
 
     for _i in 0..5 {
         positions.push(random_free_position(&positions));
-        commands.spawn_bundle(AsteroidBigBundle {
+        commands.spawn(AsteroidBigBundle {
             ..Default::default()
         })
         .insert(Transform {
@@ -91,7 +92,7 @@ fn spawn_background_player_asteroids (
         ;
     }
 
-    state.replace(AppState::InGame).unwrap();
+    next_state.set(AppState::InGame);
 }
 
 fn respawn_player (
@@ -108,7 +109,7 @@ fn respawn_player (
             ))
         }
         positions.push(random_free_position(&positions));
-        commands.spawn_bundle(ShipBundle {
+        commands.spawn(ShipBundle {
             ..Default::default()
         })
         .insert(Transform {
@@ -155,11 +156,10 @@ fn spawn_sprite_grid (
             |(x_factor, y_factor)|
 
                 if sprite_type.is_ship() {
-                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                    commands.spawn(MaterialMesh2dBundle {
                         mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(60.0, 60.0), flip: false })).into(),
                         material: res_material_basic.add(MaterialBasic {
-                            texture: textures.ship.clone_weak(),
-                            ..Default::default()
+                            texture: Some(textures.ship.clone_weak()),
                         }),
                         transform: Transform {
                             translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
@@ -172,11 +172,10 @@ fn spawn_sprite_grid (
                 }
                 else if let Some(asteroid_size) = asteroid_size {
                     if asteroid_size.is_big() {
-                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        commands.spawn(MaterialMesh2dBundle {
                             mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(180.0, 180.0), flip: false })).into(),
                             material: res_material_basic.add(MaterialBasic {
-                                texture: textures.asteroid_1.clone_weak(),
-                                ..Default::default()
+                                texture: Some(textures.asteroid_1.clone_weak()),
                             }),
                             transform: Transform {
                                 translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
@@ -188,11 +187,10 @@ fn spawn_sprite_grid (
                         .id()
                     }
                     else if asteroid_size.is_medium() {
-                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        commands.spawn(MaterialMesh2dBundle {
                             mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(80.0, 80.0), flip: false })).into(),
                             material: res_material_basic.add(MaterialBasic {
-                                texture: textures.asteroid_1.clone_weak(),
-                                ..Default::default()
+                                texture: Some(textures.asteroid_1.clone_weak()),
                             }),
                             transform: Transform {
                                 translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
@@ -204,11 +202,10 @@ fn spawn_sprite_grid (
                         .id()
                     }
                     else {
-                        commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                        commands.spawn(MaterialMesh2dBundle {
                             mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(36.0, 36.0), flip: false })).into(),
                             material: res_material_basic.add(MaterialBasic {
-                                texture: textures.asteroid_1.clone_weak(),
-                                ..Default::default()
+                                texture: Some(textures.asteroid_1.clone_weak()),
                             }),
                             transform: Transform {
                                 translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
@@ -221,10 +218,10 @@ fn spawn_sprite_grid (
                     }
                 }
                 else if sprite_type.is_shield() {
-                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                    commands.spawn(MaterialMesh2dBundle {
                         mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(72.0, 72.0), flip: false })).into(),
                         material: res_material_shield.add(MaterialShield {
-                            texture_gradient: textures.color_gradients.clone_weak(),
+                            texture_gradient: Some(textures.color_gradients.clone_weak()),
                             ..Default::default()
                         }),
                         transform: Transform {
@@ -238,11 +235,10 @@ fn spawn_sprite_grid (
                 }
                 else if let Some(charge_level) = charge_level {
                     let quad_size = 30.0 * (1.0 + 1.8 * (charge_level.0 / 1.0).floor());
-                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                    commands.spawn(MaterialMesh2dBundle {
                         mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(quad_size, quad_size), flip: false })).into(),
                         material: res_material_basic.add(MaterialBasic {
-                            texture: textures.bullet.clone_weak(),
-                            ..Default::default()
+                            texture: Some(textures.bullet.clone_weak()),
                         }),
                         transform: Transform {
                             translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 10.0),
@@ -254,11 +250,10 @@ fn spawn_sprite_grid (
                     .id()
                 }
                 else { // Always initialize values. TODO: Make this sprite something obvious for debugging
-                    commands.spawn().insert_bundle(MaterialMesh2dBundle {
+                    commands.spawn(MaterialMesh2dBundle {
                         mesh: res_meshes.add(Mesh::from(shape::Quad { size: Vec2::new(60.0, 60.0), flip: false })).into(),
                         material: res_material_basic.add(MaterialBasic {
-                            texture: textures.ship.clone_weak(),
-                            ..Default::default()
+                            texture: Some(textures.ship.clone_weak()),
                         }),
                         transform: Transform {
                             translation: Vec3::new(x_factor * WINDOW_WIDTH, y_factor * WINDOW_HEIGHT, 20.0),
@@ -342,7 +337,7 @@ fn spawn_sprite_grid (
             (1.0 as f32, 1.0 as f32),
             ].into_iter().map(
             |(x_factor, y_factor)|
-            commands.spawn_bundle(SpriteBundle {
+            commands.spawn(SpriteBundle {
                 texture: texture.clone(),
                 sprite: Sprite{
                     custom_size: Some(Vec2::new(quad_size, quad_size)),
@@ -381,7 +376,7 @@ fn spawn_asteroid_fragments (
                 let y_pos = event.transform.translation.y + (j * 2.0 * PI / 3.0 + start_angle).sin() * spawn_circle_radius;
                 let x_vel = rf32(-added_velocity, added_velocity);
                 let y_vel = rf32(-added_velocity, added_velocity);
-                commands.spawn_bundle(AsteroidMediumBundle::default())
+                commands.spawn(AsteroidMediumBundle::default())
                 .insert(Transform {
                     translation: Vec3::new(x_pos, y_pos, event.transform.translation.z),
                     ..Default::default()
@@ -398,7 +393,7 @@ fn spawn_asteroid_fragments (
                 let y_pos = event.transform.translation.y + (j * 2.0 * PI / 3.0 + start_angle).sin() * spawn_circle_radius;
                 let x_vel = rf32(-added_velocity, added_velocity);
                 let y_vel = rf32(-added_velocity, added_velocity);
-                commands.spawn_bundle(AsteroidSmallBundle::default())
+                commands.spawn(AsteroidSmallBundle::default())
                 .insert(Transform {
                     translation: Vec3::new(x_pos, y_pos, event.transform.translation.z),
                     ..Default::default()

@@ -9,11 +9,11 @@ pub struct MovementPlugin;
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(movement_translation))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(movement_rotation))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(edge_looping))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(bullet_direction_to_angle))
-        .add_system_set(SystemSet::on_update(AppState::InGame).with_system(normalize_angle))
+        .add_system(movement_translation.in_set(OnUpdate(AppState::InGame)))
+        .add_system(movement_rotation.in_set(OnUpdate(AppState::InGame)))
+        .add_system(edge_looping.in_set(OnUpdate(AppState::InGame)))
+        .add_system(bullet_direction_to_angle.in_set(OnUpdate(AppState::InGame)))
+        .add_system(normalize_angle.in_set(OnUpdate(AppState::InGame)))
         ;
     }
 }

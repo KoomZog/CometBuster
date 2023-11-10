@@ -109,11 +109,17 @@ pub fn collision_bounce(
         v2.y = loss_factor * (vt2 * (th2-th12).cos() * ( m2 - m1 ) + 2.0 * m1 * vt1 * ( th1 - th12 ).cos() ) / ( m2 + m1 ) * th12.sin() + vt2 * ( th2 - th12 ).sin() * ( th12 + PI / 2.0 ).sin();
 
         let change_of_momentum: f32 = m1 * (v1_start.x - v1.x).hypot(v1_start.y - v1.y);
-        commands.spawn().insert(ScreenShake{amplitude: (0.0 + change_of_momentum / 5000.0).min(10.0), ..Default::default()});
+        commands.spawn(ScreenShake{amplitude: (0.0 + change_of_momentum / 5000.0).min(10.0), ..Default::default()});
 
         let contact_point: Vec2 = Vec2::new(t1.x + th12.cos() * r1, t1.y + th12.sin() * r1);
-        commands.spawn_bundle(SpriteBundle {
-            sprite: Sprite { color: Color::rgb(1.0, 1.0, 1.0), flip_x: false, flip_y: false, custom_size: Some(Vec2::new(5.0,5.0)) },
+        commands.spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(1.0, 1.0, 1.0),
+                flip_x: false,
+                flip_y: false,
+                custom_size: Some(Vec2::new(5.0,5.0)),
+                ..Default::default()
+            },
             transform: Transform {
                 translation: Vec3::new(
                     contact_point.x,

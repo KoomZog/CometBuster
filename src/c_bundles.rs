@@ -17,6 +17,8 @@ pub struct PhysicsObjectBundle {
     pub angle: Angle,
     pub mass: Mass,
     pub radius: Radius,
+    pub visibility: Visibility,
+    pub computed_visibility: ComputedVisibility,
 }
 impl Default for PhysicsObjectBundle {
     fn default() -> Self {
@@ -29,6 +31,8 @@ impl Default for PhysicsObjectBundle {
             angle: Angle::default(),
             mass: Mass::default(),
             radius: Radius::default(),
+            visibility: Visibility::Visible,
+            computed_visibility: ComputedVisibility::default(),
         }
     }
 }
@@ -188,6 +192,8 @@ pub struct ShieldBundle {
     pub transform: Transform,
     pub global_transform: GlobalTransform,
     pub radius: Radius,
+    pub visibility: Visibility,
+    pub computed_visibility: ComputedVisibility,
 }
 impl Default for ShieldBundle {
     fn default() -> Self {
@@ -198,6 +204,8 @@ impl Default for ShieldBundle {
             transform: Transform::default(),
             global_transform: GlobalTransform::default(),
             radius: Radius(30.0),
+            visibility: Visibility::Visible,
+            computed_visibility: ComputedVisibility::default(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+#[derive(Resource)]
 pub struct Textures{
     pub ship: Handle<Image>,
     pub shield: Handle<Image>,
