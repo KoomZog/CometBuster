@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid,TypePath},
     render::render_resource::{AsBindGroup, ShaderRef},
     sprite::{Material2d, Material2dPlugin},
 };
@@ -9,7 +9,7 @@ pub struct MaterialBasicPlugin;
 
 impl Plugin for MaterialBasicPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(Material2dPlugin::<MaterialBasic>::default());
+        app.add_plugins(Material2dPlugin::<MaterialBasic>::default());
     }
 }
 
@@ -20,7 +20,7 @@ impl Material2d for MaterialBasic {
 }
 
 // This is the struct that will be passed to your shader
-#[derive(AsBindGroup, TypeUuid, Debug, Clone)]
+#[derive(AsBindGroup, TypeUuid, Debug, Clone, Asset, TypePath)]
 #[uuid = "badbcd09-76fc-45a7-86da-b9e227c5634b"]
 pub struct MaterialBasic {
     #[texture(0)]

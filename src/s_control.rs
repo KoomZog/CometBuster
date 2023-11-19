@@ -11,7 +11,7 @@ pub struct ControlPlugin;
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system(control.in_set(OnUpdate(AppState::InGame)))
+        .add_systems(Update, control.run_if(in_state(AppState::InGame)))
         ;
     }
 }

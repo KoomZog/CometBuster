@@ -20,11 +20,11 @@ pub struct SpawnDespawnPlugin;
 impl Plugin for SpawnDespawnPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system(despawn_after_lifetime.in_set(OnUpdate(AppState::InGame)))
-        .add_system(spawn_background_player_asteroids.in_set(OnUpdate(AppState::SpawnStart)))
-        .add_system(respawn_player.in_set(OnUpdate(AppState::InGame)))
-        .add_system(spawn_sprite_grid.in_set(OnUpdate(AppState::InGame)))
-        .add_system(spawn_asteroid_fragments.in_set(OnUpdate(AppState::InGame)))
+        .add_systems(Update, despawn_after_lifetime.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, spawn_background_player_asteroids.run_if(in_state(AppState::SpawnStart)))
+        .add_systems(Update, respawn_player.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, spawn_sprite_grid.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, spawn_asteroid_fragments.run_if(in_state(AppState::InGame)))
         ;
     }
 }
@@ -366,7 +366,7 @@ fn spawn_asteroid_fragments (
 ) {
     let added_velocity = 80.0;
     let retained_velocity_factor = 0.9;
-    for event in spawn_asteroid_fragment_reader.iter() {
+    for event in spawn_asteroid_fragment_reader.read() {
         let start_angle = rf32(0.0, 2.0 * PI / 3.0);
         if event.asteroid_size_destroyed.is_big() {
             for i in 0..3 {

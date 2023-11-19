@@ -1,6 +1,6 @@
 use bevy::ecs::schedule::States;
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+#[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 pub enum AppState {
     #[default]
     SetupMaterials,

@@ -9,7 +9,7 @@ pub struct SetupWorldPlugin;
 impl Plugin for SetupWorldPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_startup_system(setup_world)
+        .add_systems(Startup, setup_world)
         ;
     }
 }

@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid,TypePath},
     render::{
         render_resource::*,
     },
@@ -16,8 +16,8 @@ pub struct MaterialShieldPlugin;
 
 impl Plugin for MaterialShieldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(Material2dPlugin::<MaterialShield>::default())
-        .add_system(shield_collision.in_set(OnUpdate(AppState::InGame)))
+        app.add_plugins(Material2dPlugin::<MaterialShield>::default())
+        .add_systems(Update, shield_collision.run_if(in_state(AppState::InGame)))
         ;
     }
 }
@@ -30,7 +30,7 @@ impl Material2d for MaterialShield {
 }
 
 // This is the struct that will be passed to your shader
-#[derive(AsBindGroup, TypeUuid, Debug, Clone)]
+#[derive(AsBindGroup, TypeUuid, Debug, Clone, Asset, TypePath)]
 #[uuid = "4ee9c363-1124-4113-890e-199d81b00281"]
 pub struct MaterialShield {
     #[uniform(0)]
@@ -68,7 +68,7 @@ fn shield_collision (
     mut shield_collision_reader: EventReader<EvShieldCollision>,
     mut res_shield: ResMut<Assets<MaterialShield>>,
 ) {
-    for event in shield_collision_reader.iter() {
+    for event in shield_collision_reader.read() {
         let shield_position = event.shield_position;
         let other_position = event.other_position;
         let other_closest_position = closest_position(shield_position.x, shield_position.y, other_position.x, other_position.y);

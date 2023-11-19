@@ -17,7 +17,7 @@ use bevy::{
 //    asset::AssetServerSettings,
 };
 
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+//use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 // Add instant crate in modules that need it?
 //extern crate instant; // Works exactly like the std::time counterpart on native, but uses JS performance.now() for WASM
@@ -63,12 +63,17 @@ use s_pause::PausePlugin;
 mod s_setup_world;
 use s_setup_world::SetupWorldPlugin;
 
+#[derive(Event, TypePath)]
 struct EvSpawnBounceEffect{
 //    transform: Transform,
 }
 
 fn main() {
     let mut app = App::new();
+
+    app.add_state::<AppState>()
+    ;
+
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "CometBuster".into(),
@@ -94,26 +99,23 @@ cursor: Cursor::new{
 //    .add_plugins(DefaultPlugins)
 
 
-    .add_plugin(WorldInspectorPlugin::new())
-    .add_plugin(EnergyPlugin)
-    .add_plugin(MovementPlugin)
-    .add_plugin(SpawnDespawnPlugin)
-    .add_plugin(CollisionDetectionPlugin)
-    .add_plugin(ControlPlugin)
-    .add_plugin(ScreenShakePlugin)
-    .add_plugin(PausePlugin)
-    .add_plugin(SetupWorldPlugin)
-    .add_plugin(MaterialShieldPlugin)
-    .add_plugin(MaterialBasicPlugin)
+//    .add_plugins(WorldInspectorPlugin::new())
+    .add_plugins(EnergyPlugin)
+    .add_plugins(MovementPlugin)
+    .add_plugins(SpawnDespawnPlugin)
+    .add_plugins(CollisionDetectionPlugin)
+    .add_plugins(ControlPlugin)
+    .add_plugins(ScreenShakePlugin)
+    .add_plugins(SetupWorldPlugin)
+    .add_plugins(MaterialShieldPlugin)
+    .add_plugins(MaterialBasicPlugin)
+    .add_plugins(PausePlugin)
     ;
 
     app
     .add_event::<EvSpawnAsteroidFragments>()
     .add_event::<EvSpawnBounceEffect>()
     .add_event::<EvShieldCollision>()
-    ;
-
-    app.add_state::<AppState>()
     ;
 
     app.init_resource::<Textures>()

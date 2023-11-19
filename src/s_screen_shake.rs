@@ -9,7 +9,7 @@ pub struct ScreenShakePlugin;
 impl Plugin for ScreenShakePlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_system(screen_shake.in_set(OnUpdate(AppState::InGame)))
+        .add_systems(Update, screen_shake.run_if(in_state(AppState::InGame)))
         ;
     }
 }

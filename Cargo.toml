@@ -6,7 +6,7 @@ edition = "2021"
 repository = "https://github.com/koomzog/cometbuster"
 
 [dependencies]
-bevy = "0.10.1"
+bevy = "0.12"
 bevy-inspector-egui = "0.18"
 instant = "0.1.1"
 rand = "0.8.4"

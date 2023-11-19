@@ -18,7 +18,7 @@ pub struct PhysicsObjectBundle {
     pub mass: Mass,
     pub radius: Radius,
     pub visibility: Visibility,
-    pub computed_visibility: ComputedVisibility,
+    pub inherited_visibility: InheritedVisibility,
 }
 impl Default for PhysicsObjectBundle {
     fn default() -> Self {
@@ -32,7 +32,7 @@ impl Default for PhysicsObjectBundle {
             mass: Mass::default(),
             radius: Radius::default(),
             visibility: Visibility::Visible,
-            computed_visibility: ComputedVisibility::default(),
+            inherited_visibility: InheritedVisibility::default(),
         }
     }
 }
@@ -42,7 +42,6 @@ pub struct ShipBundle {
     pub player: Player,
     pub collision_type: CollisionType,
     pub sprite_type: SpriteType,
-    #[bundle]
     pub physics_object: PhysicsObjectBundle,
     pub ship_stats: ShipStats,
     pub energy: Energy,
@@ -75,7 +74,6 @@ pub struct BulletBundle {
     pub bullet: Bullet,
     pub collision_type: CollisionType,
     pub sprite_type: SpriteType,
-    #[bundle]
     pub physics_object: PhysicsObjectBundle,
     pub spawn_time: SpawnTime,
     pub lifetime: Lifetime,
@@ -108,7 +106,6 @@ pub struct AsteroidBigBundle {
     pub asteroid_size: AsteroidSize,
     pub collision_type: CollisionType,
     pub sprite_type: SpriteType,
-    #[bundle]
     pub physics_object: PhysicsObjectBundle,
 }
 impl Default for AsteroidBigBundle {
@@ -135,7 +132,6 @@ pub struct AsteroidMediumBundle {
     pub asteroid_size: AsteroidSize,
     pub collision_type: CollisionType,
     pub sprite_type: SpriteType,
-    #[bundle]
     pub physics_object: PhysicsObjectBundle,
 }
 impl Default for AsteroidMediumBundle {
@@ -162,7 +158,6 @@ pub struct AsteroidSmallBundle {
     pub asteroid_size: AsteroidSize,
     pub collision_type: CollisionType,
     pub sprite_type: SpriteType,
-    #[bundle]
     pub physics_object: PhysicsObjectBundle,
 }
 impl Default for AsteroidSmallBundle {
@@ -193,7 +188,7 @@ pub struct ShieldBundle {
     pub global_transform: GlobalTransform,
     pub radius: Radius,
     pub visibility: Visibility,
-    pub computed_visibility: ComputedVisibility,
+    pub inherited_visibility: InheritedVisibility,
 }
 impl Default for ShieldBundle {
     fn default() -> Self {
@@ -205,7 +200,7 @@ impl Default for ShieldBundle {
             global_transform: GlobalTransform::default(),
             radius: Radius(30.0),
             visibility: Visibility::Visible,
-            computed_visibility: ComputedVisibility::default(),
+            inherited_visibility: InheritedVisibility::default(),
         }
     }
 }

@@ -1,27 +1,23 @@
-struct FragmentInput {
-    [[builtin(position)]] clip_position: vec4<f32>;
-    [[location(0)]] world_position: vec4<f32>;
-    [[location(1)]] world_normal: vec3<f32>;
-    [[location(2)]] uv: vec2<f32>;
-};
+#import bevy_pbr::forward_io::VertexOutput
+#import bevy_sprite::mesh2d_types
+#import bevy_sprite::mesh2d_view_bindings globals
 
-struct Time { value: f32;};
-struct ShieldColor { value: i32;};
-struct TimeSinceActivation { value: f32;};
-struct TimeSinceDeactivation { value: f32;};
-struct DeactivationFlash { value: i32;};
-struct TimeSinceCollision { value: f32;};
-struct CollisionAngle { value: f32;};
-
-[[group(1), binding(0)]] var<uniform> in_time: Time;
-[[group(1), binding(1)]] var<uniform> in_color: ShieldColor;
-[[group(1), binding(2)]] var<uniform> in_time_since_activation: TimeSinceActivation;
-[[group(1), binding(3)]] var<uniform> in_time_since_deactivation: TimeSinceDeactivation;
-[[group(1), binding(4)]] var<uniform> in_time_since_collision: TimeSinceCollision;
-[[group(1), binding(5)]] var<uniform> in_collision_angle: CollisionAngle;
-[[group(1), binding(6)]] var<uniform> in_deactivation_flash: DeactivationFlash;
-[[group(1), binding(7)]] var texture_gradient: texture_2d<f32>;
-[[group(1), binding(8)]] var texture_sampler_gradient: sampler;
+@group(1) @binding(0)
+var<uniform> color: i32;
+@group(1) @binding(1)
+var<uniform> time_since_activation: f32;
+@group(1) @binding(2)
+var<uniform> time_since_deactivation: f32;
+@group(1) @binding(3)
+var<uniform> time_since_collision: f32;
+@group(1) @binding(4)
+var<uniform> collision_angle: f32;
+@group(1) @binding(5)
+var<uniform> ring_deactivation_flash: i32;
+@group(1) @binding(6)
+var texture_gradient: texture_2d<f32>;
+@group(1) @binding(7)
+var texture_sampler_gradient: sampler;
 
 fn hypot(a: f32, b: f32) -> f32 {
     return sqrt(pow(a, 2.0) + pow(b, 2.0));
@@ -74,20 +70,23 @@ fn hex_base(hex_line_thickness: f32, uv: vec2<f32>, scale_x: f32, scale_y: f32) 
     return pixel;
 }
 
-[[stage(fragment)]]
-fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
+//struct FragmentInput {
+//    #import bevy_sprite::mesh2d_vertex_output
+//}
+
+@fragment
+fn fragment(
+    mesh: VertexOutput,
+    ) -> @location(0) vec4<f32> {
     // Basics
-    var uv = fragment_input.uv - 0.5;
+//    let uv = in.uv - 0.5;
+
     let pi = 3.14159265358979;
     let tau = 2.0 * pi;
 
     // -- FROM BEVY --
-    let time = in_time.value;
-    let time_since_activation = in_time_since_activation.value;
-    let time_since_deactivation = in_time_since_deactivation.value;
-    let ring_deactivation_flash = in_deactivation_flash.value;
-    let time_since_collision = in_time_since_collision.value;
-    let collision_angle = in_collision_angle.value + 0.5 * pi;
+    let time = globals.time;
+    let collision_angle_copy = collision_angle + 0.5 * pi;
 
     // -- SETTINGS --
     // General settings
@@ -125,7 +124,7 @@ fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
     let shockwave_speed = 6.0;
     let shockwave_width = 0.3;
     let shockwave_intensity = 1.0;
-    var collision_uv = uv * rotate2D(collision_angle);
+    var collision_uv = mesh.uv * rotate2D(collision_angle_copy);
     collision_uv = collision_uv * 2.0 / diameter + vec2<f32>(0.0, -1.0); // Not sure about ordering. Try different diameters.
     var collision_hypot = hypot(collision_uv.x, collision_uv.y) + shockwave_width - time_since_collision * shockwave_speed;
     var shockwave_factor = 1.0;
@@ -140,7 +139,7 @@ fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
     if (ring_deactivation_flash > 0) {
         ring_deactivation_factor = max( ring_deactivation_factor, min(flash, -flash) + ring_deactivation_flash_intensity);
     }
-    let ring_uv = uv * 2.0;
+    let ring_uv = mesh.uv * 2.0;
     let ring_hypot = hypot(ring_uv.x, ring_uv.y);
     var outline_thickness = diameter * 0.005 * shockwave_factor;
     let inner_glow_width = diameter * pulse(time, 0.4, 0.5, 0.8) * shockwave_factor;
@@ -167,7 +166,7 @@ fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
 
 
     // -- HEX PATTERN --
-    var hex_uv = uv;
+    var hex_uv = mesh.uv;
     hex_uv = hex_uv / diameter;
     hex_uv = spherize(hex_uv, hex_spherize_level);
 
@@ -236,7 +235,7 @@ fn fragment(fragment_input: FragmentInput) -> [[location(0)]] vec4<f32> {
     combined_bw = combined_bw * ring_activation_factor * ring_deactivation_factor;
 
     // Colorize the sheild
-    let colorf32 = f32(in_color.value); // (0.0 - 3.0 in increments of 1.0)
+    let colorf32 = f32(color); // (0.0 - 3.0 in increments of 1.0)
     let image_colorized = textureSample(texture_gradient, texture_sampler_gradient, vec2<f32>(combined_bw, 0.775 - colorf32 * 0.25)).rgb;
 
     return vec4<f32>(image_colorized, combined_bw);
